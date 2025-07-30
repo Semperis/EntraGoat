@@ -1,4 +1,4 @@
-# EntraGoat : A Damn Vulnerable Microsoft Entra ID Infrastructure
+# EntraGoat - A Deliberately Vulnerable Entra ID Environment
 
 ![EntraGoat Logo](./assets/logoEntra.png)
 
