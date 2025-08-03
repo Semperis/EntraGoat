@@ -23,7 +23,7 @@ EntraGoat provides an interactive web interface for challenge management and Pow
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-org/EntraGoat
+   git clone https://github.com/Semperis/EntraGoat
    cd EntraGoat
    ```
 
