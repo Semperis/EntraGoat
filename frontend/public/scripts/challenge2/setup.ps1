@@ -381,7 +381,7 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host "`n" -NoNewline
     Write-Host "-------------------------------------------------------------------" -ForegroundColor Green
     Write-Host "              SCENARIO 2 SETUP COMPLETED (VERBOSE)                 " -ForegroundColor Green
-    Write-Host "-------------------------------------------------------------------" -ForegroundColor Green
+    Write-Host "-------------------------------------------------------------------" -ForegroundColor Green
 
     Write-Host "`nVULNERABILITY DETAILS:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
