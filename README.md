@@ -117,6 +117,8 @@ EntraGoat is designed exclusively for educational and authorized security testin
 
 The authors assume no liability for misuse of this tool.
 
+This project is licensed under the terms of the MIT license, and is provided for educational and informational purposes only. It is intended to promote awareness and educate on misconfigurations and attack paths, that may exist on systems you own or are authorized to test. Unauthorized use of this information for malicious purposes, exploitation, or unlawful access is strictly prohibited. Semperis does not endorse or condone any illegal activity and disclaims any liability arising from misuse of the material. Additionally, Semperis does not guarantee the accuracy or completeness of the content and assumes no liability for any damages resulting from its use.
+
 ---
 
 **Happy Hunting!** - The EntraGoat Team
