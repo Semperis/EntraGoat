@@ -1,0 +1,211 @@
+# EntraGoat Scenario 3: Cleanup Script
+# To be run with Global Administrator privileges.
+
+# Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Groups
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory=$false)]
+    [string]$TenantId = $null
+)
+
+# Configuration
+$AppAdminGroupName = "IT Application Managers"
+$PrivAuthGroupName = "Identity Security Team"
+$TargetAppName = "Identity Management Portal"
+
+$RequiredScopes = @(
+    "Application.ReadWrite.All",
+    "AppRoleAssignment.ReadWrite.All", 
+    "User.ReadWrite.All",
+    "Directory.ReadWrite.All",
+    "RoleManagement.ReadWrite.Directory",
+    "Group.ReadWrite.All",
+    "GroupMember.ReadWrite.All"
+)
+
+Write-Host ""
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|           ENTRAGOAT SCENARIO 3 - CLEANUP PROCESS             |" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host ""
+
+#region Module Check and Import
+Write-Verbose "[*] Checking required Microsoft Graph modules..."
+$RequiredCleanupModules = @("Microsoft.Graph.Authentication", "Microsoft.Graph.Applications", "Microsoft.Graph.Users", "Microsoft.Graph.Identity.DirectoryManagement")
+foreach ($moduleName in $RequiredCleanupModules) {
+    if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue)) {
+        try {
+            Import-Module $moduleName -ErrorAction Stop
+            Write-Verbose "[+] Imported module $moduleName."
+        } catch {
+            Write-Host "[-] " -ForegroundColor Red -NoNewline
+            Write-Host "Failed to import module $moduleName. Please ensure Microsoft Graph SDK is installed. Error: $($_.Exception.Message)" -ForegroundColor White
+            exit 1
+        }
+    }
+}
+#endregion
+
+# Connect to Microsoft Graph
+if ($TenantId) {
+    Connect-MgGraph -Scopes $RequiredScopes -TenantId $TenantId -NoWelcome
+} else {
+    Connect-MgGraph -Scopes $RequiredScopes -NoWelcome
+}
+
+# Get Tenant Domain
+$Organization = Get-MgOrganization
+$TenantDomain = ($Organization.VerifiedDomains | Where-Object IsDefault).Name
+
+# Target Objects
+$LowPrivUPN = "michael.chen@$TenantDomain"
+$AdminUPN = "EntraGoat-admin-s3@$TenantDomain"
+$DummyUserUPNs = @(
+    "emily.rodriguez@$TenantDomain",
+    "james.wilson@$TenantDomain", 
+    "lisa.chang@$TenantDomain",
+    "robert.taylor@$TenantDomain"
+)
+
+# Cleanup Users
+Write-Host "Removing users..." -ForegroundColor Cyan
+
+# Remove main users and dummy users
+$allUsersToRemove = @($LowPrivUPN, $AdminUPN) + $DummyUserUPNs
+
+foreach ($UserUPN in $allUsersToRemove) {
+    $User = Get-MgUser -Filter "userPrincipalName eq '$UserUPN'" -ErrorAction SilentlyContinue
+    if ($User) {
+        try {
+            Remove-MgUser -UserId $User.Id -Confirm:$false
+            Write-Host "[+] Deleted user: $UserUPN" -ForegroundColor Green
+        } catch {
+            Write-Host "[-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[-] User not found: $UserUPN" -ForegroundColor Yellow
+    }
+}
+
+# Cleanup Groups
+Write-Host "Removing groups..." -ForegroundColor Cyan
+foreach ($GroupName in @($AppAdminGroupName, $PrivAuthGroupName)) {
+    $Group = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
+    
+    if ($Group) {
+        try {
+            # First remove role assignments if any
+            $DirectoryRoles = Get-MgDirectoryRole -All
+            foreach ($Role in $DirectoryRoles) {
+                $RoleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $Role.Id -All -ErrorAction SilentlyContinue
+                if ($RoleMembers) {
+                    $GroupInRole = $RoleMembers | Where-Object { $_.Id -eq $Group.Id }
+                    if ($GroupInRole) {
+                        try {
+                            Remove-MgDirectoryRoleMemberByRef -DirectoryRoleId $Role.Id -DirectoryObjectId $Group.Id
+                            Write-Host "[+] Removed group from role: $($Role.DisplayName)" -ForegroundColor Green
+                        } catch {
+                            Write-Host "[-] Failed to remove group from role $($Role.DisplayName): $($_.Exception.Message)" -ForegroundColor Red
+                        }
+                    }
+                }
+            }
+            
+            # Now delete the group
+            Remove-MgGroup -GroupId $Group.Id -Confirm:$false
+            Write-Host "[+] Deleted group: $GroupName" -ForegroundColor Green
+        } catch {
+            Write-Host "[-] Failed to delete group: $GroupName - $($_.Exception.Message)" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[-] Group not found: $GroupName" -ForegroundColor Yellow
+    }
+}
+
+# Cleanup Service Principal and Application
+Write-Host "Removing service principal and application registration..." -ForegroundColor Cyan
+
+# Find and remove Service Principal first
+$TargetSP = Get-MgServicePrincipal -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
+if ($TargetSP) {
+    try {
+        # Remove any app role assignments
+        $AppRoleAssignments = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $TargetSP.Id -ErrorAction SilentlyContinue
+        foreach ($Assignment in $AppRoleAssignments) {
+            try {
+                Remove-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $TargetSP.Id -AppRoleAssignmentId $Assignment.Id
+                Write-Host "[+] Removed app role assignment" -ForegroundColor Green
+            } catch {
+                Write-Host "[-] Failed to remove app role assignment: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+        
+        # Remove the service principal
+        Remove-MgServicePrincipal -ServicePrincipalId $TargetSP.Id -Confirm:$false
+        Write-Host "[+] Deleted service principal: $TargetAppName" -ForegroundColor Green
+    } catch {
+        Write-Host "[-] Failed to delete service principal: $TargetAppName - $($_.Exception.Message)" -ForegroundColor Red
+    }
+} else {
+    Write-Host "[-] Service principal not found: $TargetAppName" -ForegroundColor Yellow
+}
+
+# Find and remove app registration
+$TargetApp = Get-MgApplication -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
+if ($TargetApp) {
+    try {
+        Remove-MgApplication -ApplicationId $TargetApp.Id -Confirm:$false
+        Write-Host "[+] Deleted application registration: $TargetAppName" -ForegroundColor Green
+    } catch {
+        Write-Host "[-] Failed to delete application registration: $TargetAppName - $($_.Exception.Message)" -ForegroundColor Red
+    }
+} else {
+    Write-Host "[-] Application registration not found: $TargetAppName" -ForegroundColor Yellow
+}
+
+# Wait until all target objects are truly deleted before proceeding
+function Wait-ForDeletion {
+    param (
+        [string]$UPN,
+        [string]$AppName,
+        [string]$GroupName,
+        [int]$TimeoutSeconds = 60
+    )
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        $UserExists = $null
+        $AppExists = $null
+        $SPExists = $null
+        $GroupExists = $null
+        
+        if ($UPN) {
+            $UserExists = Get-MgUser -Filter "userPrincipalName eq '$UPN'" -ErrorAction SilentlyContinue
+        }
+        if ($AppName) {
+            $AppExists = Get-MgApplication -Filter "displayName eq '$AppName'" -ErrorAction SilentlyContinue
+            if ($AppExists) {
+                $SPExists = Get-MgServicePrincipal -Filter "appId eq '$($AppExists.AppId)'" -ErrorAction SilentlyContinue
+            }
+        }
+        if ($GroupName) {
+            $GroupExists = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
+        }
+        
+        if (-not $UserExists -and -not $AppExists -and -not $SPExists -and -not $GroupExists) {
+            Write-Host "[+] Confirmed inexistence of requested objects" 
+            return
+        }
+        Start-Sleep -Seconds 3
+    }
+    Write-Host "[-] Warning: Timed out waiting for deletion. You may hit setup race conditions." -ForegroundColor Yellow
+}
+
+Write-Host "Waiting for all objects to be fully purged before next setup..." -ForegroundColor Cyan
+Wait-ForDeletion -UPN $LowPrivUPN
+Wait-ForDeletion -UPN $AdminUPN
+Wait-ForDeletion -AppName $TargetAppName
+Wait-ForDeletion -GroupName $AppAdminGroupName
+Wait-ForDeletion -GroupName $PrivAuthGroupName
+
+Write-Host "`nCleanup process complete." -ForegroundColor Cyan

@@ -1,0 +1,328 @@
+.setup-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1001;
+  animation: fadeIn 0.3s ease-out;
+  padding: 1rem;
+}
+
+.setup-modal-content {
+  background: linear-gradient(135deg, rgba(20, 20, 20, 0.98) 0%, rgba(30, 30, 30, 0.95) 100%);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border-color);
+  box-shadow: 
+    0 25px 50px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(0, 183, 255, 0.2);
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.setup-modal-header {
+  padding: 2rem 2rem 1rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+}
+
+.setup-modal-header h2 {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-accent);
+  font-size: 1.5rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-modal-header h2::before {
+  content: '⚙️';
+  font-size: 1.2rem;
+}
+
+.setup-modal-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.close-button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.close-button:hover {
+  background: rgba(255, 68, 68, 0.2);
+  color: var(--danger-color);
+  transform: rotate(90deg) scale(1.1);
+}
+
+.setup-modal-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-header {
+  padding: 1rem 2rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.filename {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-accent);
+  font-weight: 600;
+  font-size: 0.9rem;
+  background: rgba(0, 183, 255, 0.1);
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 183, 255, 0.3);
+}
+
+.file-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.copy-btn,
+.download-btn {
+  background: rgba(0, 183, 255, 0.1);
+  border: 1px solid var(--primary-blue);
+  color: var(--text-accent);
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.copy-btn::before,
+.download-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-blue);
+  transition: left 0.3s ease;
+  z-index: -1;
+}
+
+.copy-btn:hover::before,
+.download-btn:hover::before {
+  left: 0;
+}
+
+.copy-btn:hover,
+.download-btn:hover {
+  color: var(--bg-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 183, 255, 0.3);
+}
+
+.copy-btn:disabled,
+.download-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.copy-btn:disabled:hover,
+.download-btn:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.code-container {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+  background: #0d1117;
+  position: relative;
+}
+
+.code-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #39d353, #2ea043, #39d353);
+}
+
+.code-block {
+  margin: 0;
+  padding: 2rem;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #e6edf3;
+  background: transparent;
+  overflow: auto;
+  white-space: pre;
+  word-wrap: break-word;
+}
+
+/* Remove all syntax highlighting - uniform text color */
+.code-block .powershell,
+.code-block code,
+.code-block * {
+  color: #e6edf3 !important;
+  background: transparent !important;
+}
+
+.setup-modal-footer {
+  padding: 1rem 2rem;
+  border-top: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.setup-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-style: italic;
+  text-align: center;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  color: var(--text-secondary);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(0, 183, 255, 0.3);
+  border-top: 3px solid var(--primary-blue);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-container {
+  padding: 1rem 2rem;
+}
+
+.error-message {
+  color: var(--danger-color);
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid var(--danger-color);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+/* Custom scrollbar for code container */
+.code-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.code-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.code-container::-webkit-scrollbar-thumb {
+  background: var(--primary-blue);
+  border-radius: 4px;
+}
+
+.code-container::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-dark);
+}
+
+.code-container::-webkit-scrollbar-corner {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .setup-modal-content {
+    margin: 1rem;
+    max-height: 95vh;
+  }
+  
+  .setup-modal-header {
+    padding: 1.5rem;
+  }
+  
+  .file-header {
+    padding: 1rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  
+  .file-actions {
+    justify-content: center;
+  }
+  
+  .code-block {
+    padding: 1rem;
+    font-size: 0.8rem;
+  }
+  
+  .filename {
+    text-align: center;
+  }
+}

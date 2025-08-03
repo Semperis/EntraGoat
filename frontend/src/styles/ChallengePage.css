@@ -1,0 +1,778 @@
+.challenge-page {
+  padding: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+  min-height: 100vh;
+  animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, rgba(0, 183, 255, 0.15) 0%, rgba(0, 150, 200, 0.1) 100%);
+  border: 2px solid var(--primary-blue);
+  border-radius: 10px;
+  color: var(--text-accent);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.back-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--primary-blue);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.back-button:hover::before {
+  opacity: 1;
+}
+
+.back-button:hover {
+  color: var(--bg-primary);
+  transform: translateX(-4px);
+  box-shadow: 0 6px 20px rgba(0, 183, 255, 0.3);
+}
+
+.challenge-navigation {
+  display: flex;
+  gap: 1rem;
+}
+
+.nav-button {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.nav-button:hover {
+  background: rgba(0, 183, 255, 0.1);
+  border-color: var(--primary-blue);
+  color: var(--text-accent);
+  transform: translateY(-2px);
+}
+
+.challenge-container {
+  background: linear-gradient(135deg, rgba(26, 26, 26, 0.95) 0%, rgba(42, 42, 42, 0.9) 100%);
+  border-radius: 16px;
+  padding: 2rem;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+}
+
+.challenge-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--gradient-primary);
+}
+
+.challenge-container.completed {
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 204, 106, 0.05) 100%);
+  border-color: var(--success-color);
+  animation: completedGlow 2s ease-in-out infinite alternate;
+}
+
+.challenge-container.completed::before {
+  background: var(--gradient-success);
+}
+
+@keyframes completedGlow {
+  from { 
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(0, 255, 136, 0.2);
+  }
+  to { 
+    box-shadow: 
+      0 12px 40px rgba(0, 0, 0, 0.4),
+      0 0 30px rgba(0, 255, 136, 0.4);
+  }
+}
+
+.challenge-header {
+  margin-bottom: 1.5rem;
+}
+
+.challenge-container h1 {
+  margin: 0 0 0.8rem 0;
+  color: var(--text-accent);
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.challenge-meta-info {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.difficulty-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.challenge-id {
+  background: rgba(0, 183, 255, 0.2);
+  color: var(--primary-blue);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--primary-blue);
+}
+
+.completed-status {
+  background: var(--gradient-success);
+  color: var(--bg-primary);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.challenge-description {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+  padding: 1.2rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  border-left: 3px solid var(--primary-blue);
+}
+
+.starting-credentials {
+  background: rgba(0, 183, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+  border: 1px solid rgba(0, 183, 255, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.starting-credentials::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-primary);
+}
+
+.starting-credentials h3 {
+  margin: 0 0 1rem 0;
+  color: var(--text-accent);
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.starting-credentials h3::before {
+  content: '🔑';
+  font-size: 1rem;
+}
+
+.starting-credentials p {
+  margin: 0.8rem 0;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  border: 1px solid rgba(0, 183, 255, 0.2);
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.starting-credentials p:hover {
+  background: rgba(0, 0, 0, 0.6);
+  border-color: var(--primary-blue);
+}
+
+.starting-credentials strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.credential-value {
+  color: var(--text-accent);
+  font-size: 0.85rem;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.tools-section {
+  margin: 1.5rem 0;
+}
+
+.tools-section h3 {
+  color: var(--text-primary);
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tools-section h3::before {
+  content: '🛠️';
+  font-size: 1rem;
+}
+
+.setup-section {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.setup-file-btn,
+.cleanup-file-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.85rem;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid;
+}
+
+.setup-file-btn {
+  background: linear-gradient(135deg, rgba(255, 170, 0, 0.2) 0%, rgba(255, 140, 0, 0.1) 100%);
+  border-color: #ffaa00;
+  color: #ffaa00;
+}
+
+.cleanup-file-btn {
+  background: linear-gradient(135deg, rgba(255, 68, 68, 0.2) 0%, rgba(255, 40, 40, 0.1) 100%);
+  border-color: #ff4444;
+  color: #ff4444;
+}
+
+.setup-file-btn::before,
+.cleanup-file-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  transition: left 0.3s ease;
+  z-index: -1;
+}
+
+.setup-file-btn::before {
+  background: #ffaa00;
+}
+
+.cleanup-file-btn::before {
+  background: #ff4444;
+}
+
+.setup-file-btn:hover::before,
+.cleanup-file-btn:hover::before {
+  left: 0;
+}
+
+.setup-file-btn:hover,
+.cleanup-file-btn:hover {
+  color: var(--bg-primary);
+  transform: translateY(-2px);
+}
+
+.setup-file-btn:hover {
+  box-shadow: 0 8px 25px rgba(255, 170, 0, 0.3);
+}
+
+.cleanup-file-btn:hover {
+  box-shadow: 0 8px 25px rgba(255, 68, 68, 0.3);
+}
+
+.success-message {
+  text-align: center;
+  padding: 2rem;
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.15) 0%, rgba(0, 204, 106, 0.1) 100%);
+  border-radius: 16px;
+  border: 2px solid var(--success-color);
+  margin: 1.5rem 0;
+  animation: successCelebration 1s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes successCelebration {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.success-message h2 {
+  color: var(--success-color);
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0 0 0.8rem 0;
+  position: relative;
+  z-index: 1;
+}
+
+.success-message h2::before {
+  content: '🎉 ';
+  animation: bounce 1s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+  60% { transform: translateY(-5px); }
+}
+
+.success-message p {
+  color: var(--text-primary);
+  font-size: 1rem;
+  position: relative;
+  z-index: 1;
+  margin: 0.4rem 0;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.next-challenge-btn,
+.home-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  font-size: 0.85rem;
+}
+
+.next-challenge-btn {
+  background: var(--gradient-primary);
+  color: var(--bg-primary);
+  border: 2px solid var(--primary-blue);
+}
+
+.home-btn {
+  background: transparent;
+  color: var(--text-accent);
+  border: 2px solid var(--border-color);
+}
+
+.next-challenge-btn:hover,
+.home-btn:hover {
+  transform: translateY(-2px);
+}
+
+.next-challenge-btn:hover {
+  box-shadow: 0 8px 25px rgba(0, 183, 255, 0.3);
+}
+
+.home-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--primary-blue);
+}
+
+.flag-submission {
+  margin: 2rem 0;
+}
+
+.flag-submission h3 {
+  color: var(--text-primary);
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flag-submission h3::before {
+  content: '🚩';
+  font-size: 1rem;
+}
+
+.flag-submission form {
+  display: flex;
+  gap: 0;
+  margin: 1.5rem 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.flag-submission form:focus-within {
+  border-color: var(--primary-blue);
+  box-shadow: var(--shadow-glow);
+}
+
+.flag-submission input {
+  flex-grow: 1;
+  padding: 14px 20px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: 'JetBrains Mono', monospace;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.flag-submission input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.flag-submission input::placeholder {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.flag-submission button {
+  padding: 14px 28px;
+  border: none;
+  background: var(--gradient-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.flag-submission button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transition: left 0.5s;
+}
+
+.flag-submission button:hover::before {
+  left: 100%;
+}
+
+.flag-submission button:hover {
+  background: linear-gradient(135deg, #0095cc 0%, #007aa3 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 183, 255, 0.4);
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 1rem 0;
+  font-weight: 500;
+  animation: messageSlide 0.4s ease-out;
+  border: 1px solid;
+  position: relative;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.message::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+}
+
+.message.success {
+  background: rgba(0, 255, 136, 0.15);
+  color: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.message.success::before {
+  background: var(--success-color);
+}
+
+.message.error {
+  background: rgba(255, 68, 68, 0.15);
+  color: var(--danger-color);
+  border-color: var(--danger-color);
+}
+
+.message.error::before {
+  background: var(--danger-color);
+}
+
+@keyframes messageSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hints-section {
+  margin-top: 2rem;
+}
+
+.hints-section h3 {
+  color: var(--text-primary);
+  margin: 0 0 1.2rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hints-section h3::before {
+  content: '💡';
+  font-size: 1rem;
+}
+
+.hints-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.hint {
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.hint:hover {
+  border-color: var(--primary-blue);
+  background: rgba(0, 183, 255, 0.05);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.hint button {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 12px 16px;
+  text-align: left;
+  color: var(--text-accent);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+
+.hint button:hover {
+  background: rgba(0, 183, 255, 0.1);
+  color: var(--primary-blue);
+}
+
+.hint-title {
+  font-weight: 600;
+}
+
+.hint-icon {
+  font-size: 1.2rem;
+  font-weight: 700;
+  transition: transform 0.3s ease;
+}
+
+.hint button.open .hint-icon {
+  transform: rotate(180deg);
+}
+
+.hint-content {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  animation: hintReveal 0.4s ease-out;
+}
+
+.hint-content p {
+  padding: 16px;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-size: 0.85rem;
+}
+
+@keyframes hintReveal {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 200px;
+  }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .challenge-page {
+    padding: 1rem;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .challenge-navigation {
+    justify-content: space-between;
+  }
+  
+  .challenge-container {
+    padding: 1.5rem;
+  }
+  
+  .challenge-container h1 {
+    font-size: 1.4rem;
+  }
+  
+  .flag-submission form {
+    flex-direction: column;
+    border-radius: 8px;
+  }
+  
+  .flag-submission input,
+  .flag-submission button {
+    border-radius: 6px;
+  }
+  
+  .flag-submission input {
+    margin-bottom: 1px;
+  }
+  
+  .starting-credentials {
+    padding: 1.2rem;
+  }
+  
+  .starting-credentials p {
+    font-size: 0.75rem;
+    padding: 8px 10px;
+  }
+  
+  .starting-credentials strong {
+    font-size: 0.75rem;
+  }
+  
+  .credential-value {
+    font-size: 0.75rem;
+  }
+  
+  .challenge-meta-info {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+  
+  .completion-actions {
+    flex-direction: column;
+  }
+  
+  .setup-section {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .challenge-container {
+    padding: 1.2rem;
+  }
+  
+  .challenge-container h1 {
+    font-size: 1.3rem;
+  }
+  
+  .success-message {
+    padding: 1.5rem 1.2rem;
+  }
+  
+  .hints-section h3,
+  .flag-submission h3,
+  .starting-credentials h3,
+  .tools-section h3 {
+    font-size: 1rem;
+  }
+}
