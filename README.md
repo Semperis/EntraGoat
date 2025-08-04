@@ -85,6 +85,7 @@ Solution guides are available in the `solutions/` directory for each scenario:
 
 ## 📝  Resources
 - [What Is EntraGoat?](https://www.semperis.com/blog/what-is-entragoat-entra-id-simulation-environment/)
+- [Getting started with EntraGoat](https://www.semperis.com/blog/getting-started-with-entragoat-entra-id-simulation-lab/)
 
 ## 🖼️ Screenshots
 
