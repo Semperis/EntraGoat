@@ -10,7 +10,7 @@ EntraGoat uses PowerShell scripts and Microsoft Graph APIs to deploy vulnerable 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- A Microsoft Entra ID tenant (Recommended: a test/trial tenant)
+- A Microsoft Entra ID tenant (Use a test/trial tenant)
 - Global Administrator privileges
 - Microsoft Graph PowerShell SDK
 - Node.js, npm
