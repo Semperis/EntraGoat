@@ -83,6 +83,9 @@ Solution guides are available in the `solutions/` directory for each scenario:
 - Detailed step-by-step attack procedures
 - PowerShell automation scripts
 
+## 📝  Resources
+- [What Is EntraGoat?](https://www.semperis.com/blog/what-is-entragoat-entra-id-simulation-environment/)
+
 ## 🖼️ Screenshots
 
 ### Main Dashboard
