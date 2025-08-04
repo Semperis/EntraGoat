@@ -48,7 +48,7 @@ For individual scenarios, navigate to the specific challenge directory:
 
 ```powershell
 cd scenarios
-.\EntraGoat-Scenario1-Setup.ps1 -Verbose
+.\EntraGoat-Scenario1-Setup.ps1
 ```
 
 ## 🎯 Challenge Structure
