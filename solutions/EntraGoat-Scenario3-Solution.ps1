@@ -69,10 +69,6 @@ $tenantId = "[YOUR-TENANT-ID]"
 $UPN = "michael.chen@[YOUR-DOMAIN].onmicrosoft.com"
 $password = "GoatAccess!123"
 
-$tenantId = "7c5581d5-e976-489e-8055-b165cc12fa22"
-$UPN = "michael.chen@334brf.onmicrosoft.com"
-$password = "GoatAccess!123"
-
 # quick wrapper to list all members of a group (handles SPs too - uses /beta)
 # as Get-MgGroupMember doesn't show SPs on v1.0, so we use a direct API call instead
 function Get-GroupMembers {
