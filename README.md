@@ -34,6 +34,7 @@ EntraGoat provides an interactive web interface for challenge management and Pow
 
 3. **Run the web interface**
    ```bash
+   cd .\frontend
    npm install
    npm start
    ```
