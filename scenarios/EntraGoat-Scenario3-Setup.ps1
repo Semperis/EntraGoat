@@ -1,6 +1,7 @@
 <#
+
 .SYNOPSIS
-EntraGoat Scenario 3: Group Ownership Privilege Escalation Chain
+EntraGoat Scenario 3: Group MemberShipwreck – Sailed into Admin Waters
 Setup script to be run with Global Administrator privileges 
 
 #>
@@ -18,15 +19,15 @@ $AppAdminGroupName = "IT Application Managers"
 $PrivAuthGroupName = "Identity Security Team"   
 $TargetAppName = "Identity Management Portal"   
 $Flag = "EntraGoat{Gr0up_Ch@1n_Pr1v_Esc@l@t10n!}"
-$AdminPassword = "ComplexP@ssw0rd#2025!"
+$AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
-$standardDelay = 10 # Seconds
-$longReplicationDelay = 20
+$standardDelay = 10 
+$longReplicationDelay = 15
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host "|         ENTRAGOAT SCENARIO 3 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
-Write-Host "|                Groups all the way to the top                 |" -ForegroundColor Cyan
+Write-Host "|       Group MemberShipwreck – Sailed into Admin Waters       |" -ForegroundColor Cyan
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
@@ -183,7 +184,7 @@ if ($ExistingAdminUser) {
 }
 #endregion
 
-#region Store Flag in Admin User
+#region Store admin flag in extension attributes
 Write-Verbose "[*] Storing flag in admin user's extension attributes..."
 try {
     $UpdateParams = @{
@@ -264,7 +265,7 @@ if ($ExistingAppAdminGroup) {
 
 # Assign Application Administrator role to the group
 Write-Verbose "[*] Assigning Application Administrator role to group..."
-$AppAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3" # Application Administrator
+$AppAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3" # app admin guid
 
 $AppAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$AppAdminRoleId'" -ErrorAction SilentlyContinue
 if (-not $AppAdminRole) {
@@ -306,7 +307,7 @@ if (-not $hasRole) {
 }
 #endregion
 
-#region Create Target Application and Service Principal
+#region Target application registration and service principal
 Write-Verbose "[*] Creating target application: $TargetAppName"
 $ExistingTargetApp = Get-MgApplication -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
 
@@ -527,7 +528,7 @@ foreach ($dummyUser in $dummyUsers) {
     }
 }
 
-# Add Emily and James to App Admin group
+# Add dummy users to App Admin group
 Write-Verbose "[*] Adding dummy members to groups..."
 $appAdminMembers = @($createdDummyUsers[0], $createdDummyUsers[1])  # Emily and James
 foreach ($member in $appAdminMembers) {
@@ -566,7 +567,7 @@ foreach ($member in $privAuthMembers) {
     }
 }
 
-Start-Sleep -Seconds $standardDelay  # Let memberships settle
+Start-Sleep -Seconds $standardDelay  # Let memberships settle and propagate
 #endregion
 
 #region Set Low-Priv User as Owner of App Admin Group (THE MISCONFIGURATION)
@@ -641,10 +642,10 @@ $SetupSuccessful = $ownerCheck #-and $spMemberCheck
 
 #region Output Summary
 if ($VerbosePreference -eq 'Continue') {
-    Write-Host "`n" -NoNewline
-    Write-Host "--------------------------------------------------------------" -ForegroundColor Green
-    Write-Host "                      SCENARIO 3 SETUP                         " -ForegroundColor Green
-    Write-Host "--------------------------------------------------------------" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|                      SCENARIO 3 SETUP                        |" -ForegroundColor Green
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
 
     Write-Host "`nEXPLOITATION CHAIN:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
@@ -670,12 +671,12 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host ""
 } else {
     # Minimal output for CTF players
-    Write-Host "`n" -NoNewline
+    Write-Host ""
     if ($SetupSuccessful) {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
         Write-Host "Scenario 3 setup completed successfully" -ForegroundColor White
         Write-Host ""
-        Write-Host " Objective: Chain group features to escalate privileges and authentication as the target user to retrieve the flag." -ForegroundColor Gray
+        Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
         Write-Host ""
         Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
         Write-Host "----------------------------" -ForegroundColor DarkGray

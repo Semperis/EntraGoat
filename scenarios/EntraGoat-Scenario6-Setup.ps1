@@ -15,15 +15,14 @@ param(
 
 # Configuration
 $Flag = "EntraGoat{C3rt_Byp@ss_R00t3d_4dm1n}"
-$AdminPassword = "AdminP@ssw0rd2025!"
+$AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "TheGoatAccess!123"
 $LegacyAutomationAppName = "Legacy-Automation-Service"
 $DataSyncAppName = "DataSync-Production"
 $OrgConfigAppName = "Organization-Config-Manager"
 $AuthPolicyGroupName = "Authentication Policy Managers"
-
 $standardDelay = 10
-$longReplicationDelay = 20
+$longReplicationDelay = 15
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
@@ -755,7 +754,7 @@ if ($VerbosePreference -ne 'Continue') {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
         Write-Host "Scenario 6 setup completed successfully." -ForegroundColor White
         Write-Host ""
-        Write-Host " Objective: Chain service principal (mis)configurations to enable CBA and impersonate the admin." -ForegroundColor Gray
+        Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
         Write-Host ""
         Write-Host "Hint: That dusty old automation secret? Forgotten by devs, remembered by the backend." -ForegroundColor DarkGray
 

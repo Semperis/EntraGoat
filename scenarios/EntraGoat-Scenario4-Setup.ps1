@@ -1,7 +1,10 @@
 ﻿<#
+
 .SYNOPSIS
-EntraGoat New PIM Scenario: Eligible Group Ownership Privilege Escalation
-Setup script to be run with Global Administrator privileges #>
+EntraGoat Scenario 4: I (Eligibly) Own That
+Setup script to be run with Global Administrator privileges 
+
+#>
 
 # Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Groups, Microsoft.Graph.Identity.Governance
 
@@ -11,21 +14,21 @@ param(
     [string]$TenantId = $null
 )
 
-# Configuration Variables
+# Configuration
 $AppAdminGroupName = "Application Operations Team"  
 $PrivAuthGroupName = "Authentication Management Team"   
 $TargetAppName = "Infrastructure Monitoring Tool"   
 $Flag = "EntraGoat{PIM_Gr0up_Pr1v_Esc@l@t10n_2025!}"
-$AdminPassword = "SecureP@ssw0rd#2025!"
-$LowPrivPassword = "UserAccess!456"
-$DelayShort = 8
+$AdminPassword = "ComplexAdminP@ssw0rd#2025!"
+$LowPrivPassword = "GoatAccess!123"
+$DelayShort = 10
 $DelayLong = 15
 
-Write-Host "`n" -NoNewline
-Write-Host "----------------------------------------------------------------" -ForegroundColor Cyan
-Write-Host "           ENTRAGOAT NEW PIM SCENARIO 4 - INITIALIZATION          " -ForegroundColor Cyan
-Write-Host "                  Eligible Ownership Chain                      " -ForegroundColor Cyan
-Write-Host "----------------------------------------------------------------" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|         ENTRAGOAT SCENARIO 4 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
+Write-Host "|                    I (Eligibly) Own That                     |" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
 #region Module Verification and Import
@@ -84,10 +87,9 @@ if ($MissingModules.Count -gt 0) {
 Write-Verbose "[+] All required modules are available"
 #endregion
 
-#region Microsoft Graph Connection
 Write-Verbose "[*] Establishing Microsoft Graph connection..."
 
-# Enhanced scopes including PIM group management
+#region Authentication
 $GraphScopes = @(
     "Application.ReadWrite.All",
     "AppRoleAssignment.ReadWrite.All",
@@ -109,8 +111,7 @@ try {
         Connect-MgGraph -Scopes $GraphScopes -NoWelcome -ErrorAction Stop
     }
     
-    # Test the connection
-    $Context = Get-MgContext -ErrorAction Stop
+    # $Context = Get-MgContext -ErrorAction Stop
     $OrgInfo = Get-MgOrganization -ErrorAction Stop
     
     $TenantDomain = ($OrgInfo.VerifiedDomains | Where-Object IsDefault).Name
@@ -140,7 +141,7 @@ if (-not $HasPIMScopes) {
 
 #region User Account Creation
 Write-Verbose "[*] Creating user accounts..."
-$LowPrivUPN = "woody@$TenantDomain"
+$LowPrivUPN = "woody.chen@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s4@$TenantDomain"
 
 # Create or get low-privileged user
@@ -283,7 +284,7 @@ if ($ExistingAppGroup) {
         MailEnabled = $false
         MailNickname = "test-group-name-4"
         SecurityEnabled = $true
-        IsAssignableToRole = $true  # CRITICAL: This must be true for directory role assignments
+        IsAssignableToRole = $true 
     }
     $AppAdminGroup = New-MgGroup @AppGroupParams
     Write-Verbose "Group created: $AppAdminGroupName"
@@ -367,7 +368,7 @@ if (-not $ExistingEligible) {
 }
 #endregion
 
-#region Target Application and Service Principal
+#region Target application registration and service principal
 Write-Verbose "[*] Creating target application and service principal..."
 $ExistingApp = Get-MgApplication -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
 
@@ -527,10 +528,10 @@ if ($SPIsMember) {
 }
 #endregion
 
-#region Realistic Environment Users
-Write-Verbose "[*] Creating realistic environment users..."
+#region dummy Users
+Write-Verbose "[*] Creating dummy users..."
 
-$RealisticUsers = @(
+$DummyUsers = @(
     @{
         DisplayName = "Sarah Martinez"
         UserPrincipalName = "sarah.martinez@$TenantDomain"
@@ -555,7 +556,7 @@ $RealisticUsers = @(
 )
 
 $CreatedUsers = @()
-foreach ($user in $RealisticUsers) {
+foreach ($user in $DummyUsers) {
     $existingUser = Get-MgUser -Filter "userPrincipalName eq '$($user.UserPrincipalName)'" -ErrorAction SilentlyContinue
     if (-not $existingUser) {
         $userParams = $user + @{
@@ -783,10 +784,10 @@ $OverallSuccess = $OwnershipVerified -and $RoleAssignmentVerified
 
 #region Output Summary
 if ($VerbosePreference -eq 'Continue') {
-    Write-Host "`n" -NoNewline
-    Write-Host "-----------------------------------------------------------" -ForegroundColor Green
-    Write-Host "                   NEW PIM SCENARIO SETUP                  " -ForegroundColor Green
-    Write-Host "-----------------------------------------------------------" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|                      SCENARIO 4 SETUP                        |" -ForegroundColor Green
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
 
     Write-Host "`nPIM EXPLOITATION CHAIN:" -ForegroundColor Yellow
         Write-Host "Low-privileged user has ELIGIBLE ownership of group" -ForegroundColor Magenta
@@ -837,13 +838,13 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host ""
    
    
-    # Minimal output for CTF participants
-    Write-Host "`n" -NoNewline
+    # Minimal output for CTF players
+    Write-Host ""
     if ($OverallSuccess) {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
         Write-Host "New PIM scenario setup completed successfully" -ForegroundColor White
         Write-Host ""
-        Write-Host "Objective: Use PIM and group ownership to escalate privileges and retrieve the flag." -ForegroundColor Gray
+        Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
         Write-Host ""
         Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
         Write-Host "----------------------------------------------" -ForegroundColor DarkGray
