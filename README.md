@@ -89,6 +89,7 @@ Solution guides are available in the `solutions/` directory for each scenario:
 - [Getting started with EntraGoat](https://www.semperis.com/blog/getting-started-with-entragoat-entra-id-simulation-lab/)
 - [Scenario 1 Solution: Service Principal Ownership Abuse in Entra ID](https://www.semperis.com/blog/service-principal-ownership-abuse-in-entra-id/)
 - [Scenario 2 Solution: Exploiting App-Only Graph Permissions in Entra ID](https://www.semperis.com/blog/exploiting-app-only-graph-permissions-in-entra-id/)
+- [Scenario 6 Solution: Exploiting Certificate-Based Authentication to Impersonate Global Admin in Entra ID](https://www.semperis.com/blog/exploiting-certificate-based-authentication-in-entra-id/)
 
 ## 🖼️ Screenshots
 
