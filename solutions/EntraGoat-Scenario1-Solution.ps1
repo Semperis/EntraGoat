@@ -146,7 +146,8 @@ foreach ($sp in $ownedSPs) {
 }
 
 # Save the SP object ID
-$targetSPId = $ownedSPs | Where-Object { $_.DisplayName -eq "HR Analytics Dashboard"} | Select-Object -First 1 -ExpandProperty Id
+$targetSPId = $ownedSPs | Where-Object { $_.DisplayName -eq "Finance Analytics Dashboard"} | Select-Object -First 1 -ExpandProperty Id
+$clientId = $ownedSPs | Where-Object { $_.DisplayName -eq "Finance Analytics Dashboard"} | Select-Object -First 1 -ExpandProperty AppId
 
 # Step 3: Since we own the SP, we can add a secret to it
 $secretDescription = "EntraGoat-Secret-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
