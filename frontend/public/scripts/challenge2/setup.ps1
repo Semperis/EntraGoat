@@ -16,12 +16,11 @@ param(
 # Configuration
 $PrivilegedAppName = "Corporate Finance Analytics"  
 $Flag = "EntraGoat{4P1_P37mission_4bus3_Succ3ss!}"
-$AdminPassword = "AdminP@ssw0rd2025!"
+$AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
 $CertificatePassword = "GoatAccess!123"
-
-$standardDelay = 10 # Seconds
-$longReplicationDelay = 20 
+$standardDelay = 10
+$longReplicationDelay = 15 
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
@@ -104,7 +103,7 @@ try {
     } else {
         Connect-MgGraph -Scopes $GraphScopes -NoWelcome
     }
-    $MgContext = Get-MgContext 
+    # $MgContext = Get-MgContext 
     $Organization = Get-MgOrganization
     $TenantDomain = ($Organization.VerifiedDomains | Where-Object IsDefault).Name
     $CurrentTenantId = $Organization.Id 
@@ -170,7 +169,7 @@ if ($ExistingAdminUser) {
 }
 #endregion
 
-#region Store Flag in Admin User
+#region Store admin flag in extension attributes
 Write-Verbose "[*] Storing flag in admin user's extension attributes..."
 try {
     $UpdateParams = @{
@@ -243,7 +242,8 @@ $cert = New-SelfSignedCertificate `
 $pfxCertBytesForUserOutput = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $CertificatePassword)
 $certBase64ForUserOutput = [System.Convert]::ToBase64String($pfxCertBytesForUserOutput) 
 
-# For adding to application keyCredentials:
+# For adding to application keyCredentials attribute:
+# https://learn.microsoft.com/en-us/graph/api/resources/keycredential?view=graph-rest-1.0
 # 1. 'Key' property needs raw certificate data as byte[]
 $rawCertDataBytesForAppKey = $cert.GetRawCertData()
 
@@ -378,10 +378,10 @@ $SetupSuccessful = $true # Assume success unless an exit occurred
 #region Output Summary with Certificate
 if ($VerbosePreference -eq 'Continue') {
     # only for VERBOSE output
-    Write-Host "`n" -NoNewline
-    Write-Host "-------------------------------------------------------------------" -ForegroundColor Green
-    Write-Host "              SCENARIO 2 SETUP COMPLETED (VERBOSE)                 " -ForegroundColor Green
-    Write-Host "-------------------------------------------------------------------" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "|-------------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|              SCENARIO 2 SETUP COMPLETED (VERBOSE)                 |" -ForegroundColor Green
+    Write-Host "|-------------------------------------------------------------------|" -ForegroundColor Green
 
     Write-Host "`nVULNERABILITY DETAILS:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
@@ -426,11 +426,11 @@ Write-Host "          .----------------." -ForegroundColor DarkGray
 Write-Host "         |  ACME DEVOPS     |" -ForegroundColor DarkGray
 Write-Host "         |                  |--------------." -ForegroundColor DarkGray
 Write-Host "         |__________________|_|)            |" -ForegroundColor DarkGray
-Write-Host "           (O)          (O)   '._________.'" -ForegroundColor DarkGray
+Write-Host "           (O)          (O)   '.__________.'" -ForegroundColor DarkGray
 Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host "                                       Log Output:" -ForegroundColor Yellow
 Write-Host "                                               \\" -ForegroundColor Yellow
-Write-Host "                                                --" -ForegroundColor DarkGray 
+Write-Host "                                                ---" -ForegroundColor DarkGray 
 Write-Host "                                               |CERT|" -ForegroundColor Yellow
 Write-Host "                                               ------" -ForegroundColor Yellow
 Write-Host ""
@@ -450,7 +450,7 @@ if ($VerbosePreference -ne 'Continue') {
     if ($SetupSuccessful) {
         Write-Host "Scenario 2 setup completed successfully." -ForegroundColor White
         Write-Host ""
-        Write-Host " Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
+        Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
         Write-Host ""
         Write-Host "Hint: This cert seems harmless but listen closely. It may speak with someone else`'s authority." -ForegroundColor DarkGray
     } else {

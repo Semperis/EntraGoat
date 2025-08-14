@@ -4,11 +4,13 @@ EntraGoat Scenario 2: Cleanup Script
 To be run with Global Administrator privileges.
 
 .DESCRIPTION
-Removes all Azure AD objects created by the EntraGoat Scenario 2 setup script.
-This includes users, the application registration, and its service principal.
+Cleans up:
+- Users (jennifer.clark, EntraGoat-admin-s2, and dummy users)
+- Application registration and its service principal (Corporate Finance Analytics)
+- Directory role assignments
 #>
 
-#Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users
+# Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users
 
 [CmdletBinding()]
 param(
@@ -17,15 +19,14 @@ param(
 )
 
 # Configuration
-$ScenarioPrefix = "EntraGoat-S2"
 $VulnerableAppName = "Corporate Finance Analytics"
 
 $standardDelay = 10 
 
 Write-Host ""
-Write-Host "==============================================================" -ForegroundColor Cyan
-Write-Host "            ENTRAGOAT SCENARIO 2 - CLEANUP PROCESS              " -ForegroundColor Cyan
-Write-Host "==============================================================" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|           ENTRAGOAT SCENARIO 2 - CLEANUP PROCESS             |" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
 #region Module Check and Import
@@ -76,7 +77,7 @@ $AdminUPN = "EntraGoat-admin-s2@$TenantDomain"
 #region Cleanup Users
 Write-Host "`n[*] Removing users..." -ForegroundColor Cyan
 foreach ($UserUPN in @($LowPrivUPN, $AdminUPN)) {
-    Write-Verbose "    -> Checking user: $UserUPN"
+    Write-Verbose "    ->  Checking user: $UserUPN"
     $User = Get-MgUser -Filter "userPrincipalName eq '$UserUPN'" -ErrorAction SilentlyContinue
     if ($User) {
         try {
@@ -97,12 +98,12 @@ $App = Get-MgApplication -Filter "displayName eq '$VulnerableAppName'" -ErrorAct
 
 if ($App) {
     $AppIdToDelete = if ($App.AppId -is [array]) { $App.AppId[0] } else { $App.AppId.ToString() }
-    Write-Verbose "    -> Found application registration: $($App.DisplayName) (AppID: $AppIdToDelete)"
+    Write-Verbose "    ->  Found application registration: $($App.DisplayName) (AppID: $AppIdToDelete)"
 
     # Delete Service Principal first
     $SP = Get-MgServicePrincipal -Filter "appId eq '$AppIdToDelete'" -ErrorAction SilentlyContinue
     if ($SP) {
-        Write-Verbose "    -> Found service principal: $($SP.DisplayName) (ObjectID: $($SP.Id))"
+        Write-Verbose "    ->  Found service principal: $($SP.DisplayName) (ObjectID: $($SP.Id))"
         try {
             Remove-MgServicePrincipal -ServicePrincipalId $SP.Id -Confirm:$false -ErrorAction Stop
             Write-Host "    [+] Deleted service principal: $($SP.DisplayName)" -ForegroundColor Green
@@ -114,7 +115,7 @@ if ($App) {
     }
 
     # Delete Application Registration
-    Write-Verbose "    -> Attempting to delete application registration: $($App.DisplayName) (ObjectID: $($App.Id))"
+    Write-Verbose "    ->  Attempting to delete application registration: $($App.DisplayName) (ObjectID: $($App.Id))"
     try {
         Remove-MgApplication -ApplicationId $App.Id -Confirm:$false -ErrorAction Stop
         Write-Host "    [+] Deleted application: $VulnerableAppName" -ForegroundColor Green

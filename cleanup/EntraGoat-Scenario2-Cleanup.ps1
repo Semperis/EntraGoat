@@ -4,11 +4,13 @@ EntraGoat Scenario 2: Cleanup Script
 To be run with Global Administrator privileges.
 
 .DESCRIPTION
-Removes all Entra ID objects created by the EntraGoat Scenario 2 setup script.
-This includes users, the application registration, and its service principal.
+Cleans up:
+- Users (jennifer.clark, EntraGoat-admin-s2, and dummy users)
+- Application registration and its service principal (Corporate Finance Analytics)
+- Directory role assignments
 #>
 
-#Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users
+# Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users
 
 [CmdletBinding()]
 param(

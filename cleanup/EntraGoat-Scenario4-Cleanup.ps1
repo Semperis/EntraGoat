@@ -5,11 +5,10 @@ Removes all objects created by the PIM Eligible Group Ownership scenario
 
 .DESCRIPTION
 This script cleans up all resources created by the Scenario 4 setup script including:
-- Users (low-privileged and admin target users)
+- Users (woody.chen, EntraGoat-admin-s4, and dummy users)
 - Groups (Application Operations Team and Authentication Management Team)
-- Service principal and application registration
+- Service principal and its application registration (Infrastructure Monitoring Tool)
 - PIM eligible assignments and role assignments
-- Realistic environment users
 #>
 
 # Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Groups, Microsoft.Graph.Identity.Governance
@@ -25,11 +24,10 @@ $AppAdminGroupName = "Application Operations Team"
 $PrivAuthGroupName = "Authentication Management Team"
 $TargetAppName = "Infrastructure Monitoring Tool"
 
-Write-Host "`n" -NoNewline
-Write-Host "------------------------------------------------------------" -ForegroundColor Red
-Write-Host "             ENTRAGOAT SCENARIO 4 - CLEANUP SCRIPT            " -ForegroundColor Red
-Write-Host "                PIM Eligible Ownership Cleanup                " -ForegroundColor Red
-Write-Host "------------------------------------------------------------" -ForegroundColor Red
+Write-Host ""
+Write-Host "|------------------------------------------------------------|" -ForegroundColor Red
+Write-Host "|            ENTRAGOAT SCENARIO 4 - CLEANUP PROCESS          |" -ForegroundColor Red
+Write-Host "|------------------------------------------------------------|" -ForegroundColor Red
 Write-Host ""
 
 #region Module Verification and Import
@@ -96,7 +94,7 @@ try {
 #endregion
 
 #region Define Target Objects
-$LowPrivUPN = "woody@$TenantDomain"
+$LowPrivUPN = "woody.chen@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s4@$TenantDomain"
 
 # Realistic environment users (from setup script)
@@ -368,11 +366,6 @@ $DeletionComplete = Wait-ForDeletion -UserUPNs $AllUsersToRemove -AppName $Targe
 #endregion
 
 #region Cleanup Summary
-Write-Host "`n" -NoNewline
-Write-Host "---------------------------------------------------------" -ForegroundColor Green
-Write-Host "                    CLEANUP COMPLETED                    " -ForegroundColor Green
-Write-Host "---------------------------------------------------------" -ForegroundColor Green
-
 Write-Host "`nCLEANED UP OBJECTS:" -ForegroundColor Yellow
 Write-Host "  Users:" -ForegroundColor White
 foreach ($UPN in $AllUsersToRemove) {
@@ -406,4 +399,4 @@ try {
     # Ignore cleanup errors
 }
 
-Write-Host ""
+Write-Host "`nCleanup process complete." -ForegroundColor Cyan

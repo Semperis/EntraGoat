@@ -5,11 +5,11 @@ EntraGoat Scenario 6: Cleanup Script
 
 .DESCRIPTION
 Cleans up:
-- Users (terence, EntraGoat-admin-s6, and dummy users)
+- Users (terence.mckenna <3, EntraGoat-admin-s6, and dummy users)
 - Application registrations and service principals (Legacy, DataSync, and OrgConfig)
-- Authentication Policy Managers group and role assignments
+- Authentication Policy Managers group
 - PIM eligibility schedules
-- CBA configurations and malicious root CAs
+- CBA configurations and malicious root CAs 
 - Directory role assignments
 #>
 
