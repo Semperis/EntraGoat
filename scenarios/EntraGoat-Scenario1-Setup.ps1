@@ -17,11 +17,10 @@ param(
 # Configuration
 $PrivilegedAppName = "Finance Analytics Dashboard"
 $Flag = "EntraGoat{SP_0wn3rsh1p_Pr1v_Esc@l@t10n_Congratz!}"
-$AdminPassword = "ComplexP@ssw0rd#2025!"
+$AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
-
 $standardDelay = 10 # Seconds
-$longReplicationDelay = 20
+$longReplicationDelay = 15
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
@@ -159,7 +158,6 @@ $ExistingAdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUPN'" -Erro
 if ($ExistingAdminUser) {
     $AdminUser = $ExistingAdminUser
     Write-Verbose "       EXISTS (using existing)"
-    # Update password to ensure we know it
     $passwordProfile = @{
         Password = $AdminPassword
         ForceChangePasswordNextSignIn = $false
@@ -184,7 +182,7 @@ if ($ExistingAdminUser) {
 }
 #endregion
 
-#region Store Flag in Admin User
+#region Store admin flag in extension attributes
 Write-Verbose "[*] Storing flag in admin user's extension attributes..."
 try {
     $UpdateParams = @{
@@ -425,10 +423,10 @@ $SetupSuccessful = $ownerCheck -and ($roleCheck -or $hasRole)
 #region Output Summary
 if ($VerbosePreference -eq 'Continue') {
     # Verbose output with all details
-    Write-Host "`n" -NoNewline
-    Write-Host "----------------------------------------------------------------" -ForegroundColor Green
-    Write-Host "              SCENARIO 1 SETUP COMPLETED                        " -ForegroundColor Green
-    Write-Host "----------------------------------------------------------------" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "|----------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|                 SCENARIO 1 SETUP COMPLETED                     |" -ForegroundColor Green
+    Write-Host "|----------------------------------------------------------------|" -ForegroundColor Green
 
     Write-Host "`nVULNERABILITY DETAILS:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
@@ -459,7 +457,7 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host "  App ID: " -ForegroundColor White -NoNewline
     Write-Host "$AppId" -ForegroundColor Cyan
 
-    Write-Host "`n" -NoNewline
+    Write-Host ""
     Write-Host "FLAG: " -ForegroundColor Green -NoNewline
     Write-Host "$Flag" -ForegroundColor Cyan
 
@@ -467,7 +465,7 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host ""
 } else {
     # Minimal output for CTF players
-    Write-Host "`n" -NoNewline
+    Write-Host ""
     if ($SetupSuccessful) {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
         Write-Host "Scenario 1 setup completed successfully" -ForegroundColor White

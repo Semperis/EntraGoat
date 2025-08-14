@@ -1,7 +1,6 @@
 <#
 .SYNOPSIS
 EntraGoat Scenario 3: Walkthrough solution step-by-step
-This can be done 100% from the UI as well, this script just automates the process
 
 .DESCRIPTION
 ________________________________________________________________________________________________________________________________________________

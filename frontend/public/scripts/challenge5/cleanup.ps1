@@ -1,3 +1,18 @@
+<#
+.SYNOPSIS
+EntraGoat Scenario 5: Cleanup Script
+To be run with Global Administrator privileges.
+
+.DESCRIPTION
+Cleans up:
+- Users (sarah.connor, EntraGoat-admin-s5, and dummy users)
+- Groups (Regional Access Coordinators and Tier-1 Support Team)
+- PIM eligibility schedules
+- Directory role assignments
+- Custom role and its assignments
+- Administrative Unit (HR Department)
+#>
+
 # Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Groups, Microsoft.Graph.DeviceManagement.Administration
 
 [CmdletBinding()]
@@ -24,9 +39,9 @@ $RequiredScopes = @(
 )
 
 Write-Host ""
-Write-Host "==============================================================" -ForegroundColor Cyan
-Write-Host "            ENTRAGOAT SCENARIO 5 - CLEANUP PROCESS              " -ForegroundColor Cyan
-Write-Host "==============================================================" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|           ENTRAGOAT SCENARIO 5 - CLEANUP PROCESS             |" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
 #region Module Check and Import

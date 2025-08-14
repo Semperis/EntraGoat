@@ -1,6 +1,7 @@
 <#
+
 .SYNOPSIS
-EntraGoat Scenario 5: Profile Poisoning via AU-Scoped Roles
+EntraGoat Scenario 5: Department of Escalations - AU Ready for This?
 Setup script to be run with Global Administrator privileges 
 
 #>
@@ -20,9 +21,16 @@ $PrivilegedGroupName = "Regional Access Coordinators"
 $AUName = "HR Department"
 $Flag = "EntraGoat{Dyn@m1c_AU_P01s0n1ng_FTW!}"
 $SupportPassword = "GoatAccess!123"
-$AdminPassword = "AdminP@ssw0rd2025!"
-$standardDelay = 5 
-$longReplicationDelay = 15 
+$AdminPassword = "ComplexAdminP@ssw0rd#2025!"
+$standardDelay = 10 
+$longReplicationDelay = 20 
+
+Write-Host ""
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|         ENTRAGOAT SCENARIO 5 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
+Write-Host "|        Department of Escalations - AU Ready for This?        |" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host ""
 
 $HRUsers = @(
     @{ DisplayName = "Jessica Chen"; UPN = "jessica.chen"; Department = "HR"; JobTitle = "Senior Analyst" }
@@ -34,13 +42,6 @@ $RegionalUsers = @(
     @{ DisplayName = "David Wilson"; UPN = "david.wilson"; Department = "IT Operations"; JobTitle = "Regional IT Coordinator" }
     @{ DisplayName = "Lisa Park"; UPN = "lisa.park"; Department = "Security"; JobTitle = "Identity Access Manager" }
 )
-
-Write-Host ""
-Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
-Write-Host "|         ENTRAGOAT SCENARIO 5 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
-Write-Host "|        Department of Escalations - AU Ready for This?        |" -ForegroundColor Cyan
-Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
-Write-Host ""
 
 #region Module Check and Import
 Write-Verbose "[*] Checking and importing required Microsoft Graph modules..."
@@ -593,12 +594,12 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host ""
 } else {
     # Minimal output for CTF players
-    Write-Host "`n" -NoNewline
+    Write-Host ""
     if ($SetupSuccessful) {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
         Write-Host "Scenario 5 setup completed successfully" -ForegroundColor White
         Write-Host ""
-        Write-Host " Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
+        Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
         Write-Host ""
         Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
         Write-Host "----------------------------" -ForegroundColor DarkGray

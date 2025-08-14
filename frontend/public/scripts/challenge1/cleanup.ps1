@@ -1,5 +1,14 @@
-# EntraGoat Scenario 1: Cleanup Script
-# To be run with Global Administrator privileges.
+<#
+.SYNOPSIS
+EntraGoat Scenario 1: Cleanup Script
+To be run with Global Administrator privileges.
+
+.DESCRIPTION
+Cleans up:
+- Users (david.martinez, EntraGoat-admin-s1, and dummy users)
+- Application registration and its service principal (Finance Analytics Dashboard)
+- Directory role assignments
+#>
 
 # Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement
 

@@ -1,5 +1,15 @@
-# EntraGoat Scenario 3: Cleanup Script
-# To be run with Global Administrator privileges.
+<#
+.SYNOPSIS
+EntraGoat Scenario 3: Cleanup Script
+To be run with Global Administrator privileges.
+
+.DESCRIPTION
+Cleans up:
+- Users (michael.chen, EntraGoat-admin-s3, and dummy users)
+- Application registration and its service principal (Identity Management Portal)
+- Groups (Identity Security Team and IT Application Managers)
+- Directory role assignments
+#>
 
 # Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Groups
 
