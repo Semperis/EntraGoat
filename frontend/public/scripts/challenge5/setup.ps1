@@ -22,8 +22,8 @@ $AUName = "HR Department"
 $Flag = "EntraGoat{Dyn@m1c_AU_P01s0n1ng_FTW!}"
 $SupportPassword = "GoatAccess!123"
 $AdminPassword = "ComplexAdminP@ssw0rd#2025!"
-$standardDelay = 10 
-$longReplicationDelay = 20 
+$standardDelay = 5 
+$longReplicationDelay = 15 
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan

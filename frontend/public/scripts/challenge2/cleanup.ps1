@@ -93,7 +93,7 @@ foreach ($UserUPN in @($LowPrivUPN, $AdminUPN)) {
 #endregion
 
 #region Cleanup Service Principal and Application
-Write-Host "`n[*] Removing service principal and application registration for '$VulnerableAppName'..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing service principal and application registration..." -ForegroundColor Cyan
 $App = Get-MgApplication -Filter "displayName eq '$VulnerableAppName'" -ErrorAction SilentlyContinue
 
 if ($App) {
@@ -128,61 +128,52 @@ if ($App) {
 #endregion
 
 #region Wait for Deletion
-function Wait-ForDeletion {
+function Wait-ForAllDeletions {
     param (
-        [string]$UserPrincipalName,
-        [string]$ApplicationDisplayName,
+        [array]$ObjectsToCheck,
         [int]$TimeoutSeconds = 90
     )
-    Write-Verbose "    Waiting up to $TimeoutSeconds seconds for complete deletion of objects..."
+    Write-Verbose "    Waiting up to $TimeoutSeconds seconds for complete deletion of all objects..."
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $itemDeleted = $false
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $UserExists = $false
-        if ($UserPrincipalName) {
-            $UserExists = Get-MgUser -Filter "userPrincipalName eq '$UserPrincipalName'" -ErrorAction SilentlyContinue
-        }
-
-        $AppExists = $false
-        $SPExists = $false
-        if ($ApplicationDisplayName) {
-            $TempApp = Get-MgApplication -Filter "displayName eq '$ApplicationDisplayName'" -ErrorAction SilentlyContinue
-            if ($TempApp) {
-                $AppExists = $true
-                $TempAppId = if ($TempApp.AppId -is [array]) { $TempApp.AppId[0] } else { $TempApp.AppId.ToString() }
-                $SPExists = Get-MgServicePrincipal -Filter "appId eq '$TempAppId'" -ErrorAction SilentlyContinue
+        $allDeleted = $true
+        
+        foreach ($obj in $ObjectsToCheck) {
+            if ($obj.Type -eq "User") {
+                $exists = Get-MgUser -Filter "userPrincipalName eq '$($obj.UPN)'" -ErrorAction SilentlyContinue
+                if ($exists) { $allDeleted = $false }
+            } elseif ($obj.Type -eq "Application") {
+                $appExists = Get-MgApplication -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($appExists) {
+                    $allDeleted = $false
+                    $appId = if ($appExists.AppId -is [array]) { $appExists.AppId[0] } else { $appExists.AppId.ToString() }
+                    $spExists = Get-MgServicePrincipal -Filter "appId eq '$appId'" -ErrorAction SilentlyContinue
+                    if ($spExists) { $allDeleted = $false }
+                }
             }
         }
-
-        if ($UserPrincipalName -and -not $ApplicationDisplayName) {
-            if (-not $UserExists) { $itemDeleted = $true; break }
-        } elseif (-not $UserPrincipalName -and $ApplicationDisplayName) { 
-            if (-not $AppExists -and -not $SPExists) { $itemDeleted = $true; break }
-        } elseif ($UserPrincipalName -and $ApplicationDisplayName) { 
-             # This case won't be hit with current calls, but good for general function
-            if (-not $UserExists -and -not $AppExists -and -not $SPExists) { $itemDeleted = $true; break }
+        
+        if ($allDeleted) {
+            Write-Host "`n[+] Confirmed inexistence of all requested objects" -ForegroundColor DarkGreen
+            return
         }
-
-        Write-Verbose "      Still waiting for deletion... ($($sw.Elapsed.Seconds)s / $($TimeoutSeconds)s)"
+        
+                 Write-Verbose "      Still waiting for deletion... ($($sw.Elapsed.Seconds)s / $($TimeoutSeconds)s)"
         Start-Sleep -Seconds $standardDelay
     }
     $sw.Stop()
-
-    if ($itemDeleted) {
-        Write-Host "    [+] Confirmed deletion of relevant objects." -ForegroundColor Green
-    } else {
-        Write-Host "    [-] Warning: Timed out waiting for full deletion of objects related to '$($UserPrincipalName)$($ApplicationDisplayName)'. Manual check might be needed." -ForegroundColor Yellow
-    }
+    Write-Host "[-] Warning: Timed out waiting for full deletion of some objects. Manual check might be needed." -ForegroundColor Yellow
 }
 
 Write-Host "`n[*] Waiting for objects to be fully purged (this can take a moment)..." -ForegroundColor Cyan
-# Wait for users individually
-Wait-ForDeletion -UserPrincipalName $LowPrivUPN
-Wait-ForDeletion -UserPrincipalName $AdminUPN
-# Wait for App/SP
-Wait-ForDeletion -ApplicationDisplayName $VulnerableAppName
+$objectsToCheck = @(
+    @{ Type = "User"; UPN = $LowPrivUPN },
+    @{ Type = "User"; UPN = $AdminUPN },
+    @{ Type = "Application"; Name = $VulnerableAppName }
+)
+Wait-ForAllDeletions -ObjectsToCheck $objectsToCheck
 #endregion
 
-Write-Host "`nCleanup process for Scenario 2 complete." -ForegroundColor Cyan
+Write-Host "`nCleanup process for Scenario 2 complete." -ForegroundColor White
 Write-Host "=====================================================" -ForegroundColor DarkGray
 Write-Host ""

