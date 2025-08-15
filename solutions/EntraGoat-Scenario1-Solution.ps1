@@ -125,7 +125,7 @@ $password = "GoatAccess!123"
 # Step 1: Initial foothold - Authenticating as the compromised user
 Connect-MgGraph
 
-# We could also use third-party enumeration tools such as BARK, GraphRunner, ROADtools, and AADInternals. For simplicity, we will use BARK’s Get-MSGraphTokenWithUsernamePassword function to acquire a delegated graph token via ROPC.
+# We could also use third-party enumeration tools such as BARK, GraphRunner, ROADtools, and AADInternals. For simplicity, we will use BARK's Get-MSGraphTokenWithUsernamePassword function to acquire a delegated graph token via ROPC.
 # . .\BARK.ps1 
 # $userToken = Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId
 # $userAccessToken = $userToken.access_token
@@ -140,7 +140,7 @@ Get-MgContext
 # Parse-JWTToken -Token $userAccessToken
 
 # Step 2: Enumeration 
-# Since this is the first scenario in the EntraGoat series, we’ll walk through the enumeration process and highlight foundational privilege escalation techniques. In our other scenarios, we’ll assume this baseline and focus directly on the core attack path, skipping the CTF-style reconnaissance steps.
+# Since this is the first scenario in the EntraGoat series, we'll walk through the enumeration process and highlight foundational privilege escalation techniques. In our other scenarios, we'll assume this baseline and focus directly on the core attack path, skipping the CTF-style reconnaissance steps.
 
 # Get current user details
 $currentUser = Get-MgUser -Filter "userPrincipalName eq '$UPN'"

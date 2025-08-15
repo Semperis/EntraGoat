@@ -21,7 +21,7 @@ $TargetAppName = "Infrastructure Monitoring Tool"
 $Flag = "EntraGoat{PIM_Gr0up_Pr1v_Esc@l@t10n_2025!}"
 $AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
-$DelayShort = 10
+$DelayShort = 5
 $DelayLong = 15
 
 Write-Host ""

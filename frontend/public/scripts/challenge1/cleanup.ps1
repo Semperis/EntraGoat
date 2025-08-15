@@ -68,77 +68,97 @@ $LowPrivUPN = "david.martinez@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s1@$TenantDomain"
 
 # Cleanup Users
-Write-Host "Removing users..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing users..." -ForegroundColor Cyan
 
 foreach ($UserUPN in @($LowPrivUPN, $AdminUPN)) {
+    Write-Verbose "    ->  Checking user: $UserUPN"
     $User = Get-MgUser -Filter "userPrincipalName eq '$UserUPN'" -ErrorAction SilentlyContinue
     if ($User) {
         try {
             Remove-MgUser -UserId $User.Id -Confirm:$false
-            Write-Host "[+] Deleted user: $UserUPN" -ForegroundColor Green
+            Write-Host "    [+] Deleted user: $UserUPN" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] User not found: $UserUPN" -ForegroundColor Yellow
+        Write-Host "    [-] User not found: $UserUPN" -ForegroundColor Yellow
     }
 }
 
 # Cleanup Service Principal and Application
-Write-Host "Removing service principal and application registration..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing service principal and application registration..." -ForegroundColor Cyan
 $App = Get-MgApplication -Filter "displayName eq '$PrivilegedAppName'" -ErrorAction SilentlyContinue
 
 if ($App) {
+    Write-Verbose "    ->  Found application registration: $($App.DisplayName)"
+    
     # Delete SP first
     $SP = Get-MgServicePrincipal -Filter "appId eq '$($App.AppId)'" -ErrorAction SilentlyContinue
     if ($SP) {
+        Write-Verbose "    ->  Found service principal: $($SP.DisplayName)"
         try {
             Remove-MgServicePrincipal -ServicePrincipalId $SP.Id -Confirm:$false
-            Write-Host "[+] Deleted service principal: $($SP.DisplayName)" -ForegroundColor Green
+            Write-Host "    [+] Deleted service principal: $($SP.DisplayName)" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete service principal: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete service principal: $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] Service principal not found for AppId: $($App.AppId)" -ForegroundColor Yellow
+        Write-Host "    [-] Service principal not found for AppId: $($App.AppId)" -ForegroundColor Yellow
     }
 
     # Delete Application Registration
+    Write-Verbose "    ->  Attempting to delete application registration: $($App.DisplayName)"
     try {
         Remove-MgApplication -ApplicationId $App.Id -Confirm:$false
-        Write-Host "[+] Deleted application: $PrivilegedAppName" -ForegroundColor Green
+        Write-Host "    [+] Deleted application: $PrivilegedAppName" -ForegroundColor Green
     } catch {
-        Write-Host "[-] Failed to delete application: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    [-] Failed to delete application: $($_.Exception.Message)" -ForegroundColor Red
     }
 } else {
-    Write-Host "[-] Application not found: $PrivilegedAppName" -ForegroundColor Yellow
+    Write-Host "    [-] Application not found: $PrivilegedAppName" -ForegroundColor Yellow
 }
 
 # Wait until all target objects are truly deleted before proceeding
-function Wait-ForDeletion {
+function Wait-ForAllDeletions {
     param (
-        [string]$UPN,
-        [string]$AppName,
+        [array]$ObjectsToCheck,
         [int]$TimeoutSeconds = 60
     )
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $UserExists = Get-MgUser -Filter "userPrincipalName eq '$UPN'" -ErrorAction SilentlyContinue
-        $AppExists = Get-MgApplication -Filter "displayName eq '$AppName'" -ErrorAction SilentlyContinue
-        $SPExists = $null
-        if ($AppExists) {
-            $SPExists = Get-MgServicePrincipal -Filter "appId eq '$($AppExists.AppId)'" -ErrorAction SilentlyContinue
+        $allDeleted = $true
+        
+        foreach ($obj in $ObjectsToCheck) {
+            if ($obj.Type -eq "User") {
+                $exists = Get-MgUser -Filter "userPrincipalName eq '$($obj.UPN)'" -ErrorAction SilentlyContinue
+                if ($exists) { $allDeleted = $false }
+            } elseif ($obj.Type -eq "Application") {
+                $appExists = Get-MgApplication -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($appExists) {
+                    $allDeleted = $false
+                    $spExists = Get-MgServicePrincipal -Filter "appId eq '$($appExists.AppId)'" -ErrorAction SilentlyContinue
+                    if ($spExists) { $allDeleted = $false }
+                }
+            }
         }
-        if (-not $UserExists -and -not $AppExists -and -not $SPExists) {
-            Write-Host "[+] Confirmed inexistence of $UPN and $AppName."
+        
+        if ($allDeleted) {
+            Write-Host "`n[+] Confirmed inexistence of all requested objects" -ForegroundColor DarkGreen
             return
         }
         Start-Sleep -Seconds 15
     }
-    Write-Host "[-] Warning: Timed out waiting for deletion of $UPN or $AppName." -ForegroundColor Yellow
+    Write-Host "[-] Warning: Timed out waiting for deletion of some objects." -ForegroundColor Yellow
 }
 
-Write-Host "Waiting for all objects to be fully purged before next setup..." -ForegroundColor Cyan
-Wait-ForDeletion -UPN $LowPrivUPN -AppName $PrivilegedAppName
-Wait-ForDeletion -UPN $AdminUPN -AppName $PrivilegedAppName
+Write-Host "`n[*] Waiting for objects to be fully purged (this can take a moment)..." -ForegroundColor Cyan
+$objectsToCheck = @(
+    @{ Type = "User"; UPN = $LowPrivUPN },
+    @{ Type = "User"; UPN = $AdminUPN },
+    @{ Type = "Application"; Name = $PrivilegedAppName }
+)
+Wait-ForAllDeletions -ObjectsToCheck $objectsToCheck
 
-Write-Host "`nCleanup process complete." -ForegroundColor Cyan
+Write-Host "`nCleanup process for Scenario 1 complete." -ForegroundColor White
+Write-Host "=====================================================" -ForegroundColor DarkGray
+Write-Host ""

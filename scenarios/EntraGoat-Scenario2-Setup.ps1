@@ -19,8 +19,8 @@ $Flag = "EntraGoat{4P1_P37mission_4bus3_Succ3ss!}"
 $AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
 $CertificatePassword = "GoatAccess!123"
-$standardDelay = 10
-$longReplicationDelay = 15 
+$standardDelay = 5
+$longReplicationDelay = 10 
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
@@ -115,6 +115,140 @@ try {
 }
 #endregion
 
+#region Helper Functions
+function New-EntraGoatUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$UserPrincipalName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Password,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Department = "",
+        
+        [Parameter(Mandatory=$false)]
+        [string]$JobTitle = ""
+    )
+    
+    Write-Verbose "   -> $DisplayName`: $UserPrincipalName"
+    $ExistingUser = Get-MgUser -Filter "userPrincipalName eq '$UserPrincipalName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingUser) {
+        $User = $ExistingUser
+        Write-Verbose "      EXISTS (using existing)"
+        # Update password to ensure we know it
+        $passwordProfile = @{
+            Password = $Password
+            ForceChangePasswordNextSignIn = $false
+        }
+        Update-MgUser -UserId $User.Id -PasswordProfile $passwordProfile
+    } else {
+        $UserParams = @{
+            DisplayName = $DisplayName
+            UserPrincipalName = $UserPrincipalName
+            MailNickname = $MailNickname
+            AccountEnabled = $true
+            PasswordProfile = @{
+                ForceChangePasswordNextSignIn = $false
+                Password = $Password
+            }
+        }
+        
+        if ($Department) { $UserParams.Department = $Department }
+        if ($JobTitle) { $UserParams.JobTitle = $JobTitle }
+        
+        $User = New-MgUser @UserParams
+        Write-Verbose "      CREATED"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    return $User
+}
+
+function New-EntraGoatApplication {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$SignInAudience = "AzureADMyOrg",
+        
+        [Parameter(Mandatory=$false)]
+        [array]$RedirectUris = @(),
+        
+        [Parameter(Mandatory=$false)]
+        [array]$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
+    )
+    
+    Write-Verbose "[*] Creating application: $DisplayName"
+    $ExistingApp = Get-MgApplication -Filter "displayName eq '$DisplayName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingApp) {
+        $App = $ExistingApp
+        Write-Verbose "   -> Application exists: $DisplayName"
+    } else {
+        $AppParams = @{
+            DisplayName = $DisplayName
+            SignInAudience = $SignInAudience
+            Description = $Description
+        }
+        if ($RedirectUris) {
+            $AppParams.Web = @{
+                RedirectUris = $RedirectUris
+            }
+        }
+        $App = New-MgApplication @AppParams
+        Write-Verbose "   -> Application created: $DisplayName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Get App ID
+    $AppId = $App.AppId
+    if ($AppId -is [array]) { $AppId = $AppId[0] }
+    $AppId = $AppId.ToString()
+    
+    # Create service principal
+    Write-Verbose "[*] Creating service principal for $DisplayName..."
+    $ExistingSP = Get-MgServicePrincipal -Filter "appId eq '$AppId'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingSP) {
+        $SP = $ExistingSP
+        Write-Verbose "   -> Service principal exists"
+        if ($Tags) {
+            Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags -ErrorAction SilentlyContinue
+            Write-Verbose "   -> Updated tags"
+        }
+    } else {
+        $SPParams = @{
+            AppId = $AppId
+            DisplayName = $DisplayName
+        }
+        $SP = New-MgServicePrincipal @SPParams
+        Write-Verbose "   -> Service principal created"
+        Start-Sleep -Seconds $standardDelay
+        if ($Tags) {
+            Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags
+        }
+    }
+    
+    return @{
+        Application = $App
+        ServicePrincipal = $SP
+        AppId = $AppId
+    }
+}
+#endregion
+
 #region User Creation
 Write-Verbose "[*] Setting up users..."
 $LowPrivUPN = "jennifer.clark@$TenantDomain"  
@@ -122,51 +256,11 @@ $AdminUPN = "EntraGoat-admin-s2@$TenantDomain"
 
 # Create or get low-privileged user
 Write-Verbose "    ->  Finance user: $LowPrivUPN"
-$ExistingLowPrivUser = Get-MgUser -Filter "userPrincipalName eq '$LowPrivUPN'" -ErrorAction SilentlyContinue
-if ($ExistingLowPrivUser) {
-    $LowPrivUser = $ExistingLowPrivUser
-    Write-Verbose "      EXISTS (using existing)"
-} else {
-    $LowPrivUserParams = @{
-        DisplayName = "Jennifer Clark"
-        UserPrincipalName = $LowPrivUPN
-        MailNickname = "jennifer.clark"
-        AccountEnabled = $true
-        Department = "Finance"
-        JobTitle = "Senior Financial Analyst"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $LowPrivPassword
-        }
-    }
-    $LowPrivUser = New-MgUser @LowPrivUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
-}
+$LowPrivUser = New-EntraGoatUser -DisplayName "Jennifer Clark" -UserPrincipalName $LowPrivUPN -MailNickname "jennifer.clark" -Password $LowPrivPassword -Department "Finance" -JobTitle "Senior Financial Analyst"
 
 # Create or get admin user
 Write-Verbose " Admin user: $AdminUPN"
-$ExistingAdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUPN'" -ErrorAction SilentlyContinue
-if ($ExistingAdminUser) {
-    $AdminUser = $ExistingAdminUser
-    Write-Verbose "      EXISTS (using existing)"
-} else {
-    $AdminUserParams = @{
-        DisplayName = "EntraGoat Administrator S2"
-        UserPrincipalName = $AdminUPN
-        MailNickname = "entragoat-admin-s2"
-        AccountEnabled = $true
-        Department = "IT Administration"
-        JobTitle = "System Administrator"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $AdminPassword
-        }
-    }
-    $AdminUser = New-MgUser @AdminUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
-}
+$AdminUser = New-EntraGoatUser -DisplayName "EntraGoat Administrator S2" -UserPrincipalName $AdminUPN -MailNickname "entragoat-admin-s2" -Password $AdminPassword -Department "IT Administration" -JobTitle "System Administrator"
 #endregion
 
 #region Store admin flag in extension attributes
@@ -259,24 +353,11 @@ Remove-Item -Path "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force -ErrorAction
 Write-Verbose " Certificate created (Thumbprint: $($cert.Thumbprint)) and PFX data prepared. Removed from local store."
 #endregion Create Certificate
 
-#region Create Application Registration
-Write-Verbose "[*] Creating application registration: $PrivilegedAppName"
-$ExistingApp = Get-MgApplication -Filter "displayName eq '$PrivilegedAppName'" -ErrorAction SilentlyContinue
-if ($ExistingApp) {
-    $VulnerableMgApplication = $ExistingApp 
-    Write-Verbose " Application exists: $PrivilegedAppName"
-} else {
-    $AppParams = @{
-        DisplayName = $PrivilegedAppName
-        SignInAudience = "AzureADMyOrg"
-    }
-    $VulnerableMgApplication = New-MgApplication @AppParams
-    Write-Verbose " Application created: $PrivilegedAppName"
-    Start-Sleep -Seconds $standardDelay
-}
-$AppId = $VulnerableMgApplication.AppId
-if ($AppId -is [array]) { $AppId = $AppId[0] }
-$AppId = $AppId.ToString()
+#region Create Application Registration and Service Principal
+$VulnerableAppResult = New-EntraGoatApplication -DisplayName $PrivilegedAppName -Description "Application for EntraGoat Scenario 2"
+$VulnerableMgApplication = $VulnerableAppResult.Application
+$ServicePrincipal = $VulnerableAppResult.ServicePrincipal
+$AppId = $VulnerableAppResult.AppId
 
 Write-Verbose "[*] Adding certificate credential to application..."
 # For checking existing credentials, Graph usually returns CustomKeyIdentifier as a Base64 string.
@@ -314,25 +395,6 @@ if (-not $credentialExists) {
     }
 }
 #endregion Create Application Registration
-
-#region Create Service Principal
-Write-Verbose "[*] Creating service principal for $PrivilegedAppName (App ID: $AppId)..."
-$ExistingSP = Get-MgServicePrincipal -Filter "appId eq '$AppId'" -ErrorAction SilentlyContinue
-if ($ExistingSP) {
-    $ServicePrincipal = $ExistingSP
-    Write-Verbose " Service principal exists."
-} else {
-    $SPParams = @{ AppId = $AppId; DisplayName = $VulnerableMgApplication.DisplayName }
-    $ServicePrincipal = New-MgServicePrincipal @SPParams
-    Write-Verbose " Service principal created."
-    Start-Sleep -Seconds $standardDelay
-}
-
-Write-Verbose "[*] Updating service principal tags for UI visibility..."
-$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
-Update-MgServicePrincipal -ServicePrincipalId $ServicePrincipal.Id -Tags $Tags -ErrorAction SilentlyContinue
-Write-Verbose " Tags updated."
-#endregion
 
 #region Grant API Permissions (THE VULNERABILITY)
 Write-Verbose "[!] CREATING VULNERABILITY: Granting dangerous API permissions to SP..."

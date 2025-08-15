@@ -1,7 +1,7 @@
 <#
 
 .SYNOPSIS
-EntraGoat Scenario 3: Group MemberShipwreck – Sailed into Admin Waters
+EntraGoat Scenario 3: Group MemberShipwreck - Sailed into Admin Waters
 Setup script to be run with Global Administrator privileges 
 
 #>
@@ -18,16 +18,30 @@ param(
 $AppAdminGroupName = "IT Application Managers"  
 $PrivAuthGroupName = "Identity Security Team"   
 $TargetAppName = "Identity Management Portal"   
+$AIGroupName = "AI Development Team"
+$AttackSimGroupName = "Security Testing Team" 
+$NetworkGroupName = "Network Operations Team"
+$NormalGroup1Name = "Marketing Team"
+$NormalGroup2Name = "Finance Department"
 $Flag = "EntraGoat{Gr0up_Ch@1n_Pr1v_Esc@l@t10n!}"
 $AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
-$standardDelay = 10 
-$longReplicationDelay = 15
+$standardDelay = 5 
+$longReplicationDelay = 10
+
+# Role template IDs 
+$GlobalAdminRoleId = "62e90394-69f5-4237-9190-012177145e10"
+$AIAdminRoleId = "d2562ede-74db-457e-a7b6-544e236ebb61"
+$AttackSimAdminRoleId = "c430b396-e693-46cc-96f3-db01bf8bb62a"
+$NetworkAdminRoleId = "d37c8bed-0711-4417-ba38-b4abe66ce4c2"
+$AppAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
+$PrivAuthAdminRoleId = "7be44c8a-adaf-4e2a-84d6-ab2649e08a13"
+
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host "|         ENTRAGOAT SCENARIO 3 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
-Write-Host "|       Group MemberShipwreck – Sailed into Admin Waters       |" -ForegroundColor Cyan
+Write-Host "|       Group MemberShipwreck - Sailed into Admin Waters       |" -ForegroundColor Cyan
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
@@ -118,70 +132,266 @@ try {
 }
 #endregion
 
+#region Helper Functions
+function New-EntraGoatGroup {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$GroupName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$RoleTemplateId = $null,
+        
+        [Parameter(Mandatory=$false)]
+        [bool]$IsAssignableToRole = $true
+    )
+    
+    Write-Verbose "[*] Creating $GroupName group..."
+    $ExistingGroup = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingGroup) {
+        $Group = $ExistingGroup
+        Write-Verbose "   -> Group exists: $GroupName"
+    } else {
+        $GroupParams = @{
+            DisplayName = $GroupName
+            Description = $Description
+            MailEnabled = $false
+            MailNickname = $MailNickname
+            SecurityEnabled = $true
+            IsAssignableToRole = $IsAssignableToRole
+        }
+        $Group = New-MgGroup @GroupParams
+        Write-Verbose "   -> Group created: $GroupName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Assign role if specified
+    if ($RoleTemplateId) {
+        Write-Verbose "[*] Assigning role to $GroupName group..."
+        $Role = Get-MgDirectoryRole -Filter "roleTemplateId eq '$RoleTemplateId'" -ErrorAction SilentlyContinue
+        if (-not $Role) {
+            Write-Verbose "   -> Activating role template..."
+            $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $RoleTemplateId
+            $Role = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
+            Start-Sleep -Seconds $standardDelay
+        }
+        
+        # Check if group already has the role
+        $ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $Role.Id -All -ErrorAction SilentlyContinue
+        $hasRole = $false
+        if ($ExistingMembers) {
+            foreach ($member in $ExistingMembers) {
+                if ($member.Id -eq $Group.Id) {
+                    $hasRole = $true
+                    break
+                }
+            }
+        }
+        
+        if (-not $hasRole) {
+            try {
+                $RoleMemberParams = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($Group.Id)"
+                }
+                New-MgDirectoryRoleMemberByRef -DirectoryRoleId $Role.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
+                Write-Verbose "   -> Role assigned to $GroupName group"
+                Start-Sleep -Seconds $longReplicationDelay
+            } catch {
+                if ($_.Exception.Message -like "*already exist*") {
+                    Write-Verbose "   -> Role already assigned"
+                } else {
+                    Write-Verbose "   -> Failed to assign role: $($_.Exception.Message)"
+                }
+            }
+        } else {
+            Write-Verbose "   -> Group already has role"
+        }
+    }
+    
+    return $Group
+}
+
+function New-EntraGoatUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$UserPrincipalName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Password,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Department = "",
+        
+        [Parameter(Mandatory=$false)]
+        [string]$JobTitle = ""
+    )
+    
+    Write-Verbose "   -> $DisplayName`: $UserPrincipalName"
+    $ExistingUser = Get-MgUser -Filter "userPrincipalName eq '$UserPrincipalName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingUser) {
+        $User = $ExistingUser
+        Write-Verbose "      EXISTS (using existing)"
+        # Update password to ensure we know it
+        $passwordProfile = @{
+            Password = $Password
+            ForceChangePasswordNextSignIn = $false
+        }
+        Update-MgUser -UserId $User.Id -PasswordProfile $passwordProfile
+    } else {
+        $UserParams = @{
+            DisplayName = $DisplayName
+            UserPrincipalName = $UserPrincipalName
+            MailNickname = $MailNickname
+            AccountEnabled = $true
+            PasswordProfile = @{
+                ForceChangePasswordNextSignIn = $false
+                Password = $Password
+            }
+        }
+        
+        if ($Department) { $UserParams.Department = $Department }
+        if ($JobTitle) { $UserParams.JobTitle = $JobTitle }
+        
+        $User = New-MgUser @UserParams
+        Write-Verbose "      CREATED"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    return $User
+}
+
+function Set-GroupOwnership {
+    param(
+        [Parameter(Mandatory=$true)]
+        [object]$Group,
+        
+        [Parameter(Mandatory=$true)]
+        [object]$User,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$GroupName
+    )
+    
+    Write-Verbose "[*] Setting ownership for $GroupName group..."
+    $ExistingOwners = Get-MgGroupOwner -GroupId $Group.Id
+    $IsAlreadyOwner = $false
+    if ($ExistingOwners) {
+        foreach ($owner in $ExistingOwners) {
+            if ($owner.Id -eq $User.Id) {
+                $IsAlreadyOwner = $true
+                break
+            }
+        }
+    }
+    
+    if (-not $IsAlreadyOwner) {
+        $OwnerParams = @{
+            "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($User.Id)"
+        }
+        New-MgGroupOwnerByRef -GroupId $Group.Id -BodyParameter $OwnerParams
+        Write-Verbose "   -> Ownership granted for $GroupName (vulnerability created)"
+        Start-Sleep -Seconds $standardDelay
+    } else {
+        Write-Verbose "   -> Already owner of $GroupName"
+    }
+}
+
+function New-EntraGoatApplication {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$SignInAudience = "AzureADMyOrg",
+        
+        [Parameter(Mandatory=$false)]
+        [array]$RedirectUris = @("https://identity-portal.contoso.com/callback"),
+        
+        [Parameter(Mandatory=$false)]
+        [array]$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
+    )
+    
+    Write-Verbose "[*] Creating application: $DisplayName"
+    $ExistingApp = Get-MgApplication -Filter "displayName eq '$DisplayName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingApp) {
+        $App = $ExistingApp
+        Write-Verbose "   -> Application exists: $DisplayName"
+    } else {
+        $AppParams = @{
+            DisplayName = $DisplayName
+            SignInAudience = $SignInAudience
+            Description = $Description
+            Web = @{
+                RedirectUris = $RedirectUris
+            }
+        }
+        $App = New-MgApplication @AppParams
+        Write-Verbose "   -> Application created: $DisplayName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Get App ID
+    $AppId = $App.AppId
+    if ($AppId -is [array]) { $AppId = $AppId[0] }
+    $AppId = $AppId.ToString()
+    
+    # Create service principal
+    Write-Verbose "[*] Creating service principal for $DisplayName..."
+    $ExistingSP = Get-MgServicePrincipal -Filter "appId eq '$AppId'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingSP) {
+        $SP = $ExistingSP
+        Write-Verbose "   -> Service principal exists"
+    } else {
+        $SPParams = @{
+            AppId = $AppId
+            DisplayName = $DisplayName
+        }
+        $SP = New-MgServicePrincipal @SPParams
+        Write-Verbose "   -> Service principal created"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Apply tags to make it visible in Azure Portal UI
+    if ($Tags) {
+        Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags
+    }
+    
+    return @{
+        Application = $App
+        ServicePrincipal = $SP
+        AppId = $AppId
+    }
+}
+
+
+#endregion
+
 #region User Creation
 Write-Verbose "[*] Setting up users..."
 $LowPrivUPN = "michael.chen@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s3@$TenantDomain"
 
-# Create or get low-privileged user
-Write-Verbose "   -> IT Support user: $LowPrivUPN"
-$ExistingLowPrivUser = Get-MgUser -Filter "userPrincipalName eq '$LowPrivUPN'" -ErrorAction SilentlyContinue
-if ($ExistingLowPrivUser) {
-    $LowPrivUser = $ExistingLowPrivUser
-    Write-Verbose "      EXISTS (using existing)"
-    # Update password to ensure we know it
-    $passwordProfile = @{
-        Password = $LowPrivPassword
-        ForceChangePasswordNextSignIn = $false
-    }
-    Update-MgUser -UserId $LowPrivUser.Id -PasswordProfile $passwordProfile
-} else {
-    $LowPrivUserParams = @{
-        DisplayName = "Michael Chen"
-        UserPrincipalName = $LowPrivUPN
-        MailNickname = "michael.chen"
-        AccountEnabled = $true
-        Department = "IT Support"
-        JobTitle = "IT Support Specialist"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $LowPrivPassword
-        }
-    }
-    $LowPrivUser = New-MgUser @LowPrivUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Create or get admin user
-Write-Verbose "   -> Admin user: $AdminUPN"
-$ExistingAdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUPN'" -ErrorAction SilentlyContinue
-if ($ExistingAdminUser) {
-    $AdminUser = $ExistingAdminUser
-    Write-Verbose "      EXISTS (using existing)"
-    # Update password to ensure we know it
-    $passwordProfile = @{
-        Password = $AdminPassword
-        ForceChangePasswordNextSignIn = $false
-    }
-    Update-MgUser -UserId $AdminUser.Id -PasswordProfile $passwordProfile
-} else {
-    $AdminUserParams = @{
-        DisplayName = "EntraGoat Administrator S3"
-        UserPrincipalName = $AdminUPN
-        MailNickname = "entragoat-admin-s3"
-        AccountEnabled = $true
-        Department = "IT Administration"
-        JobTitle = "System Administrator"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $AdminPassword
-        }
-    }
-    $AdminUser = New-MgUser @AdminUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
-}
+# Create users
+$LowPrivUser = New-EntraGoatUser -DisplayName "Michael Chen" -UserPrincipalName $LowPrivUPN -MailNickname "michael.chen" -Password $LowPrivPassword -Department "IT Support" -JobTitle "IT Support Specialist"
+$AdminUser = New-EntraGoatUser -DisplayName "EntraGoat Administrator S3" -UserPrincipalName $AdminUPN -MailNickname "entragoat-admin-s3" -Password $AdminPassword -Department "IT Administration" -JobTitle "System Administrator"
 #endregion
 
 #region Store admin flag in extension attributes
@@ -201,7 +411,6 @@ try {
 
 #region Assign Global Administrator Role to Admin User
 Write-Verbose "[*] Assigning Global Administrator role to admin user ($AdminUPN)..."
-$GlobalAdminRoleId = "62e90394-69f5-4237-9190-012177145e10"
 $DirectoryRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$GlobalAdminRoleId'" -ErrorAction SilentlyContinue
 
 if (-not $DirectoryRole) {
@@ -243,117 +452,16 @@ if (-not $IsAlreadyGAMember) {
 #endregion
 
 #region Create Application Administrator Group
-Write-Verbose "[*] Creating Application Administrator group..."
-$ExistingAppAdminGroup = Get-MgGroup -Filter "displayName eq '$AppAdminGroupName'" -ErrorAction SilentlyContinue
-
-if ($ExistingAppAdminGroup) {
-    $AppAdminGroup = $ExistingAppAdminGroup
-    Write-Verbose "   -> Group exists: $AppAdminGroupName"
-} else {
-    $AppAdminGroupParams = @{
-        DisplayName = $AppAdminGroupName
-        Description = "Team responsible for managing enterprise applications"
-        MailEnabled = $false
-        MailNickname = "it-app-managers"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true
-    }
-    $AppAdminGroup = New-MgGroup @AppAdminGroupParams
-    Write-Verbose "   -> Group created: $AppAdminGroupName"
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Assign Application Administrator role to the group
-Write-Verbose "[*] Assigning Application Administrator role to group..."
-$AppAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3" # app admin guid
-
-$AppAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$AppAdminRoleId'" -ErrorAction SilentlyContinue
-if (-not $AppAdminRole) {
-    Write-Verbose "   -> Activating Application Administrator role..."
-    $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $AppAdminRoleId
-    $AppAdminRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Check if group already has the role
-$ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $AppAdminRole.Id -All -ErrorAction SilentlyContinue
-$hasRole = $false
-if ($ExistingMembers) {
-    foreach ($member in $ExistingMembers) {
-        if ($member.Id -eq $AppAdminGroup.Id) {
-            $hasRole = $true
-            break
-        }
-    }
-}
-
-if (-not $hasRole) {
-    try {
-        $RoleMemberParams = @{
-            "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($AppAdminGroup.Id)"
-        }
-        New-MgDirectoryRoleMemberByRef -DirectoryRoleId $AppAdminRole.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
-        Write-Verbose "   -> Application Administrator role assigned to group"
-        Start-Sleep -Seconds $longReplicationDelay
-    } catch {
-        if ($_.Exception.Message -like "*already exist*") {
-            Write-Verbose "   -> Role already assigned"
-        } else {
-            Write-Verbose "   -> Failed to assign role: $($_.Exception.Message)"
-        }
-    }
-} else {
-    Write-Verbose "   -> Group already has Application Administrator role"
-}
+$AppAdminGroup = New-EntraGoatGroup -GroupName $AppAdminGroupName -Description "Team responsible for managing enterprise applications" -MailNickname "it-app-managers" -RoleTemplateId $AppAdminRoleId
 #endregion
 
 #region Target application registration and service principal
-Write-Verbose "[*] Creating target application: $TargetAppName"
-$ExistingTargetApp = Get-MgApplication -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
+$TargetAppResult = New-EntraGoatApplication -DisplayName $TargetAppName -Description "Portal for managing user identities and access"
+$TargetApp = $TargetAppResult.Application
+$TargetSP = $TargetAppResult.ServicePrincipal
+$TargetAppId = $TargetAppResult.AppId
 
-if ($ExistingTargetApp) {
-    $TargetApp = $ExistingTargetApp
-    Write-Verbose "   -> Application exists: $TargetAppName"
-} else {
-    $TargetAppParams = @{
-        DisplayName = $TargetAppName
-        SignInAudience = "AzureADMyOrg"
-        Description = "Portal for managing user identities and access"
-        Web = @{
-            RedirectUris = @("https://identity-portal.contoso.com/callback")
-        }
-    }
-    $TargetApp = New-MgApplication @TargetAppParams
-    Write-Verbose "   -> Application created: $TargetAppName"
-    Start-Sleep -Seconds $standardDelay
-}
-
-$TargetAppId = $TargetApp.AppId
-if ($TargetAppId -is [array]) { $TargetAppId = $TargetAppId[0] }
-$TargetAppId = $TargetAppId.ToString()
-
-# Create service principal
-Write-Verbose "[*] Creating service principal for target app..."
-$ExistingTargetSP = Get-MgServicePrincipal -Filter "appId eq '$TargetAppId'" -ErrorAction SilentlyContinue
-
-if ($ExistingTargetSP) {
-    $TargetSP = $ExistingTargetSP
-    Write-Verbose "   -> Service principal exists"
-} else {
-    $TargetSPParams = @{
-        AppId = $TargetAppId
-        DisplayName = $TargetAppName
-    }
-    $TargetSP = New-MgServicePrincipal @TargetSPParams
-    Write-Verbose "   -> Service principal created"
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Make it visible in Azure Portal UI
-$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
-Update-MgServicePrincipal -ServicePrincipalId $TargetSP.Id -Tags $Tags
-
-# Grant Directory.Read.All to target SP for enumeration
+# Grant Directory.Read.All to target SP for enumeration (scenario-specific)
 Write-Verbose "[*] Granting Directory.Read.All to target SP..."
 $GraphServicePrincipal = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
 $DirectoryReadAllRole = $GraphServicePrincipal.AppRoles | Where-Object { $_.Value -eq "Directory.Read.All" }
@@ -370,72 +478,13 @@ if (-not $hasDirectoryRead) {
     New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $TargetSP.Id -BodyParameter $AppRoleAssignment | Out-Null
     Write-Verbose "   -> Directory.Read.All granted"
     Start-Sleep -Seconds $standardDelay
+} else {
+    Write-Verbose "   -> Directory.Read.All already granted"
 }
 #endregion
 
 #region Create Privileged Authentication Administrator Group
-Write-Verbose "[*] Creating Privileged Authentication Administrator group..."
-$ExistingPrivAuthGroup = Get-MgGroup -Filter "displayName eq '$PrivAuthGroupName'" -ErrorAction SilentlyContinue
-
-if ($ExistingPrivAuthGroup) {
-    $PrivAuthGroup = $ExistingPrivAuthGroup
-    Write-Verbose "   -> Group exists: $PrivAuthGroupName"
-} else {
-    $PrivAuthGroupParams = @{
-        DisplayName = $PrivAuthGroupName
-        Description = "Security team responsible for identity and authentication management"
-        MailEnabled = $false
-        MailNickname = "identity-security-team"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true
-    }
-    $PrivAuthGroup = New-MgGroup @PrivAuthGroupParams
-    Write-Verbose "   -> Group created: $PrivAuthGroupName"
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Assign Privileged Authentication Administrator role to the group
-Write-Verbose "[*] Assigning Privileged Authentication Administrator role to group..."
-$PrivAuthAdminRoleId = "7be44c8a-adaf-4e2a-84d6-ab2649e08a13" # PAA
-
-$PrivAuthAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$PrivAuthAdminRoleId'" -ErrorAction SilentlyContinue
-if (-not $PrivAuthAdminRole) {
-    Write-Verbose "   -> Activating Privileged Authentication Administrator role..."
-    $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $PrivAuthAdminRoleId
-    $PrivAuthAdminRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Check if group already has the role
-$ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $PrivAuthAdminRole.Id -All -ErrorAction SilentlyContinue
-$hasRole = $false
-if ($ExistingMembers) {
-    foreach ($member in $ExistingMembers) {
-        if ($member.Id -eq $PrivAuthGroup.Id) {
-            $hasRole = $true
-            break
-        }
-    }
-}
-
-if (-not $hasRole) {
-    try {
-        $RoleMemberParams = @{
-            "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($PrivAuthGroup.Id)"
-        }
-        New-MgDirectoryRoleMemberByRef -DirectoryRoleId $PrivAuthAdminRole.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
-        Write-Verbose "   -> Privileged Authentication Administrator role assigned to group"
-        Start-Sleep -Seconds $longReplicationDelay
-    } catch {
-        if ($_.Exception.Message -like "*already exist*") {
-            Write-Verbose "   -> Role already assigned"
-        } else {
-            Write-Verbose "   -> Failed to assign role: $($_.Exception.Message)"
-        }
-    }
-} else {
-    Write-Verbose "   -> Group already has Privileged Authentication Administrator role"
-}
+$PrivAuthGroup = New-EntraGoatGroup -GroupName $PrivAuthGroupName -Description "Security team responsible for identity and authentication management" -MailNickname "identity-security-team" -RoleTemplateId $PrivAuthAdminRoleId
 
 # Add target SP to Privileged Authentication Administrator group
 Write-Verbose "[*] Adding target SP to Privileged Authentication Administrator group..."
@@ -471,6 +520,29 @@ else {
         }
     }
 }
+#endregion
+
+#region Create Additional Groups with Unprivileged Roles
+Write-Verbose "[*] Creating additional groups with unprivileged roles..."
+
+# Create AI Development Team group
+$AIGroup = New-EntraGoatGroup -GroupName $AIGroupName -Description "Team responsible for AI and machine learning initiatives" -MailNickname "ai-dev-team" -RoleTemplateId $AIAdminRoleId
+
+# Create Security Testing Team group
+$AttackSimGroup = New-EntraGoatGroup -GroupName $AttackSimGroupName -Description "Team responsible for security testing and attack simulations" -MailNickname "security-testing-team" -RoleTemplateId $AttackSimAdminRoleId
+
+# Create Network Operations Team group
+$NetworkGroup = New-EntraGoatGroup -GroupName $NetworkGroupName -Description "Team responsible for network infrastructure and operations" -MailNickname "network-operations-team" -RoleTemplateId $NetworkAdminRoleId
+#endregion
+
+#region Create Normal Groups Without Roles
+Write-Verbose "[*] Creating normal groups without roles..."
+
+# Create Marketing Team group
+$NormalGroup1 = New-EntraGoatGroup -GroupName $NormalGroup1Name -Description "Team responsible for marketing and communications" -MailNickname "marketing-team" -IsAssignableToRole $false
+
+# Create Finance Department group
+$NormalGroup2 = New-EntraGoatGroup -GroupName $NormalGroup2Name -Description "Department responsible for financial operations and budgeting" -MailNickname "finance-department" -IsAssignableToRole $false
 #endregion
 
 #region Create Dummy Users for Realism
@@ -510,22 +582,9 @@ $dummyUsers = @(
 
 $createdDummyUsers = @()
 foreach ($dummyUser in $dummyUsers) {
-    $existingUser = Get-MgUser -Filter "userPrincipalName eq '$($dummyUser.UserPrincipalName)'" -ErrorAction SilentlyContinue
-    if (-not $existingUser) {
-        $userParams = $dummyUser + @{
-            AccountEnabled = $true
-            PasswordProfile = @{
-                ForceChangePasswordNextSignIn = $false
-                Password = "DummyP@ssw0rd$(Get-Random -Maximum 9999)"
-            }
-        }
-        $newUser = New-MgUser @userParams
-        $createdDummyUsers += $newUser
-        Write-Verbose "   -> Created dummy user: $($dummyUser.DisplayName)"
-    } else {
-        $createdDummyUsers += $existingUser
-        Write-Verbose "   -> Dummy user exists: $($dummyUser.DisplayName)"
-    }
+    $dummyPassword = "DummyP@ssw0rd$(Get-Random -Maximum 9999)"
+    $newUser = New-EntraGoatUser -DisplayName $dummyUser.DisplayName -UserPrincipalName $dummyUser.UserPrincipalName -MailNickname $dummyUser.MailNickname -Password $dummyPassword -Department $dummyUser.Department -JobTitle $dummyUser.JobTitle
+    $createdDummyUsers += $newUser
 }
 
 # Add dummy users to App Admin group
@@ -570,36 +629,25 @@ foreach ($member in $privAuthMembers) {
 Start-Sleep -Seconds $standardDelay  # Let memberships settle and propagate
 #endregion
 
-#region Set Low-Priv User as Owner of App Admin Group (THE MISCONFIGURATION)
-Write-Verbose "[!] CREATING MISCONFIGURATION: Setting IT support user as owner of App Admin group..."
+#region Set Low-Priv User as Owner of Groups (THE MISCONFIGURATION)
+Write-Verbose "[!] CREATING MISCONFIGURATION: Setting IT support user as owner of multiple groups..."
 
-$ExistingOwners = Get-MgGroupOwner -GroupId $AppAdminGroup.Id
-$IsAlreadyOwner = $false
-if ($ExistingOwners) {
-    foreach ($owner in $ExistingOwners) {
-        if ($owner.Id -eq $LowPrivUser.Id) {
-            $IsAlreadyOwner = $true
-            break
-        }
-    }
-}
-
-if (-not $IsAlreadyOwner) {
-    $OwnerParams = @{
-        "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($LowPrivUser.Id)"
-    }
-    New-MgGroupOwnerByRef -GroupId $AppAdminGroup.Id -BodyParameter $OwnerParams
-    Write-Verbose "   -> Ownership granted (vulnerability created)"
-    Start-Sleep -Seconds $standardDelay
-} else {
-    Write-Verbose "   -> Already owner (vulnerability exists)"
-}
+# Set ownership for all groups
+Set-GroupOwnership -Group $AppAdminGroup -User $LowPrivUser -GroupName "IT Application Managers"
+Set-GroupOwnership -Group $AIGroup -User $LowPrivUser -GroupName "AI Development Team"
+Set-GroupOwnership -Group $AttackSimGroup -User $LowPrivUser -GroupName "Security Testing Team"
+Set-GroupOwnership -Group $NetworkGroup -User $LowPrivUser -GroupName "Network Operations Team"
+Set-GroupOwnership -Group $NormalGroup1 -User $LowPrivUser -GroupName "Marketing Team"
+Set-GroupOwnership -Group $NormalGroup2 -User $LowPrivUser -GroupName "Finance Department"
 #endregion
 
 #region Final Verification
 Write-Verbose "[*] Running final verification..."
 
-# Verify group ownership
+# Verify group ownership for all groups
+$ownerChecks = @()
+
+# Check IT Application Managers group ownership
 $owners = Get-MgGroupOwner -GroupId $AppAdminGroup.Id
 $ownerCheck = $false
 foreach ($owner in $owners) {
@@ -608,10 +656,91 @@ foreach ($owner in $owners) {
         break
     }
 }
+$ownerChecks += $ownerCheck
 if ($ownerCheck) {
     Write-Verbose "   -> [+] IT support user owns Application Administrator group"
 } else {
-    Write-Verbose "   -> [-] IT support user does NOT own group"
+    Write-Verbose "   -> [-] IT support user does NOT own Application Administrator group"
+}
+
+# Check AI Development Team group ownership
+$owners = Get-MgGroupOwner -GroupId $AIGroup.Id
+$ownerCheck = $false
+foreach ($owner in $owners) {
+    if ($owner.Id -eq $LowPrivUser.Id) {
+        $ownerCheck = $true
+        break
+    }
+}
+$ownerChecks += $ownerCheck
+if ($ownerCheck) {
+    Write-Verbose "   -> [+] IT support user owns AI Development Team group"
+} else {
+    Write-Verbose "   -> [-] IT support user does NOT own AI Development Team group"
+}
+
+# Check Security Testing Team group ownership
+$owners = Get-MgGroupOwner -GroupId $AttackSimGroup.Id
+$ownerCheck = $false
+foreach ($owner in $owners) {
+    if ($owner.Id -eq $LowPrivUser.Id) {
+        $ownerCheck = $true
+        break
+    }
+}
+$ownerChecks += $ownerCheck
+if ($ownerCheck) {
+    Write-Verbose "   -> [+] IT support user owns Security Testing Team group"
+} else {
+    Write-Verbose "   -> [-] IT support user does NOT own Security Testing Team group"
+}
+
+# Check Network Operations Team group ownership
+$owners = Get-MgGroupOwner -GroupId $NetworkGroup.Id
+$ownerCheck = $false
+foreach ($owner in $owners) {
+    if ($owner.Id -eq $LowPrivUser.Id) {
+        $ownerCheck = $true
+        break
+    }
+}
+$ownerChecks += $ownerCheck
+if ($ownerCheck) {
+    Write-Verbose "   -> [+] IT support user owns Network Operations Team group"
+} else {
+    Write-Verbose "   -> [-] IT support user does NOT own Network Operations Team group"
+}
+
+# Check Marketing Team group ownership
+$owners = Get-MgGroupOwner -GroupId $NormalGroup1.Id
+$ownerCheck = $false
+foreach ($owner in $owners) {
+    if ($owner.Id -eq $LowPrivUser.Id) {
+        $ownerCheck = $true
+        break
+    }
+}
+$ownerChecks += $ownerCheck
+if ($ownerCheck) {
+    Write-Verbose "   -> [+] IT support user owns Marketing Team group"
+} else {
+    Write-Verbose "   -> [-] IT support user does NOT own Marketing Team group"
+}
+
+# Check Finance Department group ownership
+$owners = Get-MgGroupOwner -GroupId $NormalGroup2.Id
+$ownerCheck = $false
+foreach ($owner in $owners) {
+    if ($owner.Id -eq $LowPrivUser.Id) {
+        $ownerCheck = $true
+        break
+    }
+}
+$ownerChecks += $ownerCheck
+if ($ownerCheck) {
+    Write-Verbose "   -> [+] IT support user owns Finance Department group"
+} else {
+    Write-Verbose "   -> [-] IT support user does NOT own Finance Department group"
 }
 
 # Verify SP membership in priv auth group
@@ -637,7 +766,7 @@ if ($spMemberCheck) {
     Write-Verbose "   -> This might be a timing issue. Try running the script again."
 }
 
-$SetupSuccessful = $ownerCheck #-and $spMemberCheck
+$SetupSuccessful = ($ownerChecks -notcontains $false) #-and $spMemberCheck
 #endregion
 
 #region Output Summary
@@ -649,16 +778,35 @@ if ($VerbosePreference -eq 'Continue') {
 
     Write-Host "`nEXPLOITATION CHAIN:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
-    Write-Host "  - IT support user owns Application Administrator group" -ForegroundColor White
-    Write-Host "  - Can add self to group to gain Application Administrator" -ForegroundColor White
+    Write-Host "  - IT support user owns multiple groups with different roles" -ForegroundColor White
+    Write-Host "  - Can add self to any group to gain corresponding privileges" -ForegroundColor White
     Write-Host "  - Target SP is member of Privileged Auth Admin group" -ForegroundColor White
     Write-Host "  - Can add credentials to target SP" -ForegroundColor White
     Write-Host "  - Can reset Global Admin password" -ForegroundColor White
 
-    Write-Host "`nGROUPS:" -ForegroundColor Yellow
+    Write-Host "`nGROUPS OWNED BY IT SUPPORT USER:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
     Write-Host "  App Admin Group: $AppAdminGroupName (ID: $($AppAdminGroup.Id))" -ForegroundColor Cyan
-    Write-Host "  Priv Auth Group: $PrivAuthGroupName (ID: $($PrivAuthGroup.Id))" -ForegroundColor Cyan
+    Write-Host "  AI Admin Group: $AIGroupName (ID: $($AIGroup.Id))" -ForegroundColor Cyan
+    Write-Host "  Attack Sim Group: $AttackSimGroupName (ID: $($AttackSimGroup.Id))" -ForegroundColor Cyan
+    Write-Host "  Network Admin Group: $NetworkGroupName (ID: $($NetworkGroup.Id))" -ForegroundColor Cyan
+    Write-Host "  Marketing Group: $NormalGroup1Name (ID: $($NormalGroup1.Id))" -ForegroundColor Cyan
+    Write-Host "  Finance Group: $NormalGroup2Name (ID: $($NormalGroup2.Id))" -ForegroundColor Cyan
+    
+    Write-Host ""
+    Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Username: " -ForegroundColor White -NoNewline
+    Write-Host "$LowPrivUPN" -ForegroundColor Cyan
+    Write-Host "  Password: " -ForegroundColor White -NoNewline
+    Write-Host "$LowPrivPassword" -ForegroundColor Cyan
+
+    Write-Host "`nTARGET:" -ForegroundColor Magenta
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Username: " -ForegroundColor White -NoNewline
+    Write-Host "$AdminUPN" -ForegroundColor Cyan
+    Write-Host "  Flag Location: " -ForegroundColor White -NoNewline
+    Write-Host "extensionAttribute1" -ForegroundColor Cyan
 
     Write-Host "`nSERVICE PRINCIPAL:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray

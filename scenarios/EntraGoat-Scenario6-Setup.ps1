@@ -21,7 +21,7 @@ $LegacyAutomationAppName = "Legacy-Automation-Service"
 $DataSyncAppName = "DataSync-Production"
 $OrgConfigAppName = "Organization-Config-Manager"
 $AuthPolicyGroupName = "Authentication Policy Managers"
-$standardDelay = 10
+$standardDelay = 5
 $longReplicationDelay = 15
 
 Write-Host ""
