@@ -262,4 +262,6 @@ Disconnect-MgGraph
 # Don't forget to run the cleanup script to restore the tenant to it's original state!
 
 # To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the source code for EntraGoat Scenario 1.
+
 # Official blog post: https://www.semperis.com/blog/service-principal-ownership-abuse-in-entra-id/
+
