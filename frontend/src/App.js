@@ -79,7 +79,7 @@ function App() {
       difficulty: 'Intermediate',
       flag: 'EntraGoat{P1M_Esc4l4t10n_Fl49!}',
       startingCredentials: {
-        username: 'tim.pim@yourtenant.onmicrosoft.com',
+        username: 'woody.chen@yourtenant.onmicrosoft.com',
         password: 'GoatAccess!123'
       },
       hints: [
