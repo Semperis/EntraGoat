@@ -77,7 +77,7 @@ function App() {
       title: 'I (Eligibly) Own That',
       description: 'You landed inside an Entra ID account that looks... promising. Somewhere between group memberships and role assignments, something feels elevated. The catch? Nothing\'s active by default. Explore your standing in Privileged Identity Management, activate the right access, and chain your way into Global Admin territory.',
       difficulty: 'Intermediate',
-      flag: 'EntraGoat{P1M_Esc4l4t10n_Fl49!}',
+      flag: 'EntraGoat{PIM_Gr0up_Pr1v_Esc@l@t10n_2025!}',
       startingCredentials: {
         username: 'woody.chen@yourtenant.onmicrosoft.com',
         password: 'GoatAccess!123'
