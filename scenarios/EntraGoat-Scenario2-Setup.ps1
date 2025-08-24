@@ -39,7 +39,7 @@ $RequiredModules = @(
 )
 $MissingModules = @()
 foreach ($moduleName in $RequiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $moduleName)) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
         $MissingModules += $moduleName
     }
 }
@@ -50,11 +50,14 @@ if ($MissingModules.Count -gt 0) {
     if ($choice -eq 'Y') {
         try {
             Write-Host "Attempting to install $($MissingModules -join ', ') from PowerShell Gallery. This may take a moment..." -ForegroundColor Yellow
-            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop -Verbose:$false
             Write-Verbose "[+] Successfully attempted to install missing modules."
             # Import them after installation
             foreach ($moduleName in $MissingModules) {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "   Imported $moduleName"
             }
         } catch {
@@ -70,9 +73,12 @@ if ($MissingModules.Count -gt 0) {
 } else {
     # Import modules if they are installed but not loaded
     foreach ($moduleName in $RequiredModules) {
-        if (-not (Get-Module -Name $moduleName)) {
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
             try {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "[+] Imported module $moduleName."
             } catch {
                 Write-Host "[-] " -ForegroundColor Red -NoNewline
@@ -441,17 +447,18 @@ $SetupSuccessful = $true # Assume success unless an exit occurred
 if ($VerbosePreference -eq 'Continue') {
     # only for VERBOSE output
     Write-Host ""
-    Write-Host "|-------------------------------------------------------------------|" -ForegroundColor Green
-    Write-Host "|              SCENARIO 2 SETUP COMPLETED (VERBOSE)                 |" -ForegroundColor Green
-    Write-Host "|-------------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host "|             SCENARIO 2 SETUP COMPLETED (VERBOSE)             |" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host ""
 
     Write-Host "`nVULNERABILITY DETAILS:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
     Write-Host " - A service principal certificate is 'leaked'." -ForegroundColor White
-    Write-Host " - SP Name: $($ServicePrincipal.DisplayName) (App ID: $AppId, SP ID: $($ServicePrincipal.Id))" -ForegroundColor Cyan 
+    Write-Host " - SP Name: $($ServicePrincipal.DisplayName) (App ID: $AppId, SP ID: $($ServicePrincipal.Id))" -ForegroundColor White 
     Write-Host " - SP has 'AppRoleAssignment.ReadWrite.All' for MS Graph." -ForegroundColor White
     Write-Host " - Attacker can use SP to grant itself 'RoleManagement.ReadWrite.Directory'." -ForegroundColor White
-    Write-Host " - Then, attacker SP can assign itself Global Administrator." -ForegroundColor White
+    Write-Host " - Then, the attacker SP can assign itself Global Administrator." -ForegroundColor White
 
     Write-Host "`nFLAG: " -ForegroundColor Green -NoNewline
     Write-Host "$Flag" -ForegroundColor Cyan
@@ -505,7 +512,7 @@ Write-Host "================= BASE64 ENCODED PFX ======================" -Foregr
 Write-Host $certBase64ForUserOutput -ForegroundColor Gray
 Write-Host "===============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Wonder what you could authenticate with this...? " -ForegroundColor Yellow
+Write-Host "Hint: This cert seems harmless but listen closely. It may speak with someone else`'s authority." -ForegroundColor DarkGray
 Write-Host ""
 
 if ($VerbosePreference -ne 'Continue') {

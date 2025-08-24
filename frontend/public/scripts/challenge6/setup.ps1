@@ -21,6 +21,7 @@ $LegacyAutomationAppName = "Legacy-Automation-Service"
 $DataSyncAppName = "DataSync-Production"
 $OrgConfigAppName = "Organization-Config-Manager"
 $AuthPolicyGroupName = "Authentication Policy Managers"
+$AIAdminGroupName = "AI Operations Team"
 $standardDelay = 5
 $longReplicationDelay = 15
 
@@ -45,7 +46,7 @@ $RequiredModules = @(
 )
 $MissingModules = @()
 foreach ($moduleName in $RequiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $moduleName)) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
         $MissingModules += $moduleName
     }
 }
@@ -56,10 +57,13 @@ if ($MissingModules.Count -gt 0) {
     if ($choice -eq 'Y') {
         try {
             Write-Host "Attempting to install $($MissingModules -join ', ') from PowerShell Gallery. This may take a moment..." -ForegroundColor Yellow
-            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop -Verbose:$false
             Write-Verbose "[+] Successfully attempted to install missing modules."
             foreach ($moduleName in $MissingModules) {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "   Imported $moduleName"
             }
         } catch {
@@ -74,9 +78,12 @@ if ($MissingModules.Count -gt 0) {
     }
 } else {
     foreach ($moduleName in $RequiredModules) {
-        if (-not (Get-Module -Name $moduleName)) {
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
             try {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "[+] Imported module $moduleName."
             } catch {
                 Write-Host "[-] " -ForegroundColor Red -NoNewline
@@ -122,34 +129,227 @@ try {
 }
 #endregion
 
+#region Helper Functions
+function New-EntraGoatUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$UserPrincipalName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Password,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Department = "",
+        
+        [Parameter(Mandatory=$false)]
+        [string]$JobTitle = ""
+    )
+    
+    Write-Verbose "   -> $DisplayName`: $UserPrincipalName"
+    $ExistingUser = Get-MgUser -Filter "userPrincipalName eq '$UserPrincipalName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingUser) {
+        $User = $ExistingUser
+        Write-Verbose "      EXISTS (using existing)"
+        # Update password to ensure we know it
+        $passwordProfile = @{
+            Password = $Password
+            ForceChangePasswordNextSignIn = $false
+        }
+        Update-MgUser -UserId $User.Id -PasswordProfile $passwordProfile
+    } else {
+        $UserParams = @{
+            DisplayName = $DisplayName
+            UserPrincipalName = $UserPrincipalName
+            MailNickname = $MailNickname
+            AccountEnabled = $true
+            PasswordProfile = @{
+                ForceChangePasswordNextSignIn = $false
+                Password = $Password
+            }
+        }
+        
+        if ($Department) { $UserParams.Department = $Department }
+        if ($JobTitle) { $UserParams.JobTitle = $JobTitle }
+        
+        $User = New-MgUser @UserParams
+        Write-Verbose "      CREATED"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    return $User
+}
+
+function New-EntraGoatApplication {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$SignInAudience = "AzureADMyOrg",
+        
+        [Parameter(Mandatory=$false)]
+        [array]$RedirectUris = @(),
+        
+        [Parameter(Mandatory=$false)]
+        [array]$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
+    )
+    
+    Write-Verbose "[*] Creating application: $DisplayName"
+    $ExistingApp = Get-MgApplication -Filter "displayName eq '$DisplayName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingApp) {
+        $App = $ExistingApp
+        Write-Verbose "   -> Application exists: $DisplayName"
+    } else {
+        $AppParams = @{
+            DisplayName = $DisplayName
+            SignInAudience = $SignInAudience
+            Description = $Description
+        }
+        if ($RedirectUris) {
+            $AppParams.Web = @{
+                RedirectUris = $RedirectUris
+            }
+        }
+        $App = New-MgApplication @AppParams
+        Write-Verbose "   -> Application created: $DisplayName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Get App ID
+    $AppId = $App.AppId
+    if ($AppId -is [array]) { $AppId = $AppId[0] }
+    $AppId = $AppId.ToString()
+    
+    # Create service principal
+    Write-Verbose "[*] Creating service principal for $DisplayName..."
+    $ExistingSP = Get-MgServicePrincipal -Filter "appId eq '$AppId'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingSP) {
+        $SP = $ExistingSP
+        Write-Verbose "   -> Service principal exists"
+        if ($Tags) {
+            Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags -ErrorAction SilentlyContinue
+            Write-Verbose "   -> Updated tags"
+        }
+    } else {
+        $SPParams = @{
+            AppId = $AppId
+            DisplayName = $DisplayName
+        }
+        $SP = New-MgServicePrincipal @SPParams
+        Write-Verbose "   -> Service principal created"
+        Start-Sleep -Seconds $standardDelay
+        if ($Tags) {
+            Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags
+        }
+    }
+    
+    return @{
+        Application = $App
+        ServicePrincipal = $SP
+        AppId = $AppId
+    }
+}
+
+function New-EntraGoatGroup {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$GroupName,
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        [Parameter(Mandatory=$false)]
+        [string]$RoleTemplateId = $null,
+        [Parameter(Mandatory=$false)]
+        [bool]$IsAssignableToRole = $true
+    )
+    
+    Write-Verbose "[*] Creating group: $GroupName"
+    $ExistingGroup = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingGroup) {
+        $Group = $ExistingGroup
+        Write-Verbose "   -> Group exists: $GroupName"
+    } else {
+        $GroupParams = @{
+            DisplayName = $GroupName
+            Description = $Description
+            MailEnabled = $false
+            MailNickname = $MailNickname
+            SecurityEnabled = $true
+            IsAssignableToRole = $IsAssignableToRole
+        }
+        $Group = New-MgGroup @GroupParams
+        Write-Verbose "   -> Group created: $GroupName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Assign role if specified
+    if ($RoleTemplateId) {
+        Write-Verbose "[*] Assigning role to group..."
+        $DirectoryRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$RoleTemplateId'" -ErrorAction SilentlyContinue
+        if (-not $DirectoryRole) {
+            Write-Verbose "   -> Activating role template..."
+            $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $RoleTemplateId
+            $DirectoryRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
+            Start-Sleep -Seconds $standardDelay
+        }
+        
+        $ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRole.Id -All -ErrorAction SilentlyContinue
+        $IsAlreadyAssigned = $false
+        if ($ExistingMembers) {
+            foreach ($member in $ExistingMembers) {
+                if ($member.Id -eq $Group.Id) {
+                    $IsAlreadyAssigned = $true
+                    break
+                }
+            }
+        }
+        
+        if (-not $IsAlreadyAssigned) {
+            try {
+                $RoleMemberParams = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($Group.Id)"
+                }
+                New-MgDirectoryRoleMemberByRef -DirectoryRoleId $DirectoryRole.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
+                Write-Verbose "   -> Role assigned successfully"
+                Start-Sleep -Seconds $longReplicationDelay
+            } catch {
+                if ($_.Exception.Message -like "*already exist*") {
+                    Write-Verbose "   -> Role already assigned"
+                } else {
+                    Write-Verbose "   -> Failed to assign role: $($_.Exception.Message)"
+                }
+            }
+        } else {
+            Write-Verbose "   -> Group already has role"
+        }
+    }
+    
+    return $Group
+}
+#endregion
+
 #region User Creation
 Write-Verbose "[*] Setting up users..."
 $LowPrivUPN = "terence.mckenna@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s6@$TenantDomain"
 
-# Create or get low-privileged user
-Write-Verbose "    ->  Low-privileged user: $LowPrivUPN"
-$ExistingLowPrivUser = Get-MgUser -Filter "userPrincipalName eq '$LowPrivUPN'" -ErrorAction SilentlyContinue
-if ($ExistingLowPrivUser) {
-    $LowPrivUser = $ExistingLowPrivUser
-    Write-Verbose "      EXISTS (using existing)"
-} else {
-    $LowPrivUserParams = @{
-    DisplayName = "Terence McKenna"
-    UserPrincipalName = $LowPrivUPN
-    MailNickname = "terence.mckenna"
-    Department = "DevOps Cognitive Infrastructure"
-    JobTitle = "Ethnobotanical Identity Orchestrator"
-    AccountEnabled = $true
-    PasswordProfile = @{
-        ForceChangePasswordNextSignIn = $false
-        Password = $LowPrivPassword
-    }
-}
-    $LowPrivUser = New-MgUser @LowPrivUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
-}
+# Create main users using helper function
+$LowPrivUser = New-EntraGoatUser -DisplayName "Terence McKenna" -UserPrincipalName $LowPrivUPN -MailNickname "terence.mckenna" -Password $LowPrivPassword -Department "DevOps Cognitive Infrastructure" -JobTitle "Ethnobotanical Identity Orchestrator"
+$AdminUser = New-EntraGoatUser -DisplayName "EntraGoat Administrator S6" -UserPrincipalName $AdminUPN -MailNickname "entragoat-admin-s6" -Password $AdminPassword -Department "Executive" -JobTitle "System Administrator"
 
 # Create dummy users for realism
 Write-Verbose "[*] Creating dummy users for realistic environment..."
@@ -167,52 +367,27 @@ $dummyUsers = @(
         MailNickname = "bob.smith"
         Department = "IT Operations"
         JobTitle = "Systems Engineer"
+    },
+    @{
+        DisplayName = "Carol Davis"
+        UserPrincipalName = "carol.davis@$TenantDomain"
+        MailNickname = "carol.davis"
+        Department = "Identity Management"
+        JobTitle = "Identity Specialist"
+    },
+    @{
+        DisplayName = "David Wilson"
+        UserPrincipalName = "david.wilson@$TenantDomain"
+        MailNickname = "david.wilson"
+        Department = "Authentication Services"
+        JobTitle = "Authentication Engineer"
     }
 )
 
+$createdDummyUsers = @()
 foreach ($dummyUser in $dummyUsers) {
-    $existingUser = Get-MgUser -Filter "userPrincipalName eq '$($dummyUser.UserPrincipalName)'" -ErrorAction SilentlyContinue
-    if (-not $existingUser) {
-        $userParams = $dummyUser + @{
-            AccountEnabled = $true
-            PasswordProfile = @{
-                ForceChangePasswordNextSignIn = $false
-                Password = "DummyP@ssw0rd$(Get-Random -Maximum 9999)"
-            }
-        }
-        New-MgUser @userParams | Out-Null
-        Write-Verbose "    ->  Created dummy user: $($dummyUser.DisplayName)"
-    }
-}
-
-# Create or get admin user
-Write-Verbose "    ->  Admin user: $AdminUPN"
-$ExistingAdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUPN'" -ErrorAction SilentlyContinue
-if ($ExistingAdminUser) {
-    $AdminUser = $ExistingAdminUser
-    Write-Verbose "      EXISTS (using existing)"
-    # Update password to ensure we know it
-    $passwordProfile = @{
-        Password = $AdminPassword
-        ForceChangePasswordNextSignIn = $false
-    }
-    Update-MgUser -UserId $AdminUser.Id -PasswordProfile $passwordProfile
-} else {
-    $AdminUserParams = @{
-        DisplayName = "EntraGoat Administrator S6"
-        UserPrincipalName = $AdminUPN
-        MailNickname = "entragoat-admin-s6"
-        AccountEnabled = $true
-        Department = "Executive"
-        JobTitle = "System Administrator"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $AdminPassword
-        }
-    }
-    $AdminUser = New-MgUser @AdminUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
+    $newUser = New-EntraGoatUser -DisplayName $dummyUser.DisplayName -UserPrincipalName $dummyUser.UserPrincipalName -MailNickname $dummyUser.MailNickname -Password "DummyP@ssw0rd$(Get-Random -Maximum 9999)" -Department $dummyUser.Department -JobTitle $dummyUser.JobTitle
+    $createdDummyUsers += $newUser
 }
 #endregion
 
@@ -275,21 +450,7 @@ if (-not $IsAlreadyGAMember) {
 
 #region Create Legacy Automation App and SP
 Write-Verbose "[*] Creating legacy automation application: $LegacyAutomationAppName"
-$ExistingLegacyApp = Get-MgApplication -Filter "displayName eq '$LegacyAutomationAppName'" -ErrorAction SilentlyContinue
-
-if ($ExistingLegacyApp) {
-    $LegacyApp = $ExistingLegacyApp
-    Write-Verbose "    ->  Application exists: $LegacyAutomationAppName"
-} else {
-    $LegacyAppParams = @{
-        DisplayName = $LegacyAutomationAppName
-        SignInAudience = "AzureADMyOrg"
-        Notes = "Legacy automation service"
-    }
-    $LegacyApp = New-MgApplication @LegacyAppParams
-    Write-Verbose "    ->  Application created: $LegacyAutomationAppName"
-    Start-Sleep -Seconds $standardDelay
-}
+$LegacyAppResult = New-EntraGoatApplication -DisplayName $LegacyAutomationAppName -Description "Legacy automation service"
 
 # Add client secret
 Write-Verbose "[*] Adding client secret to legacy automation app..."
@@ -299,30 +460,13 @@ $passwordCredential = @{
     EndDateTime = (Get-Date).AddYears(1)
 }
 
-$LegacyAppSecret = Add-MgApplicationPassword -ApplicationId $LegacyApp.Id -PasswordCredential $passwordCredential
-$LegacyAppId = $LegacyApp.AppId
+$LegacyAppSecret = Add-MgApplicationPassword -ApplicationId $LegacyAppResult.Application.Id -PasswordCredential $passwordCredential
+$LegacyAppId = $LegacyAppResult.AppId
 $LegacyClientSecret = $LegacyAppSecret.SecretText # save that for output 
 Write-Verbose "    ->  Secret added successfully"
 
-Write-Verbose "[*] Creating service principal for legacy automation app..."
-$ExistingLegacySP = Get-MgServicePrincipal -Filter "appId eq '$LegacyAppId'" -ErrorAction SilentlyContinue
-
-if ($ExistingLegacySP) {
-    $LegacySP = $ExistingLegacySP
-    Write-Verbose "    ->  Service principal exists"
-} else {
-    $LegacySPParams = @{
-        AppId = $LegacyAppId
-        DisplayName = $LegacyAutomationAppName
-    }
-    $LegacySP = New-MgServicePrincipal @LegacySPParams
-    Write-Verbose "    ->  Service principal created"
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Make it visible in Azure Portal UI
-$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
-Update-MgServicePrincipal -ServicePrincipalId $LegacySP.Id -Tags $Tags
+$LegacyApp = $LegacyAppResult.Application
+$LegacySP = $LegacyAppResult.ServicePrincipal
 
 # Grant Directory.Read.All for easier enumeration
 Write-Verbose "[*] Granting minimal permissions to legacy SP..."
@@ -363,42 +507,10 @@ if (-not $hasAppRwOwnedBy) {
 
 #region Create DataSync app and SP
 Write-Verbose "[*] Creating data sync application: $DataSyncAppName"
-$ExistingDataSyncApp = Get-MgApplication -Filter "displayName eq '$DataSyncAppName'" -ErrorAction SilentlyContinue
-
-if ($ExistingDataSyncApp) {
-    $DataSyncApp = $ExistingDataSyncApp
-    Write-Verbose "    ->  Application exists: $DataSyncAppName"
-} else {
-    $DataSyncAppParams = @{
-        DisplayName = $DataSyncAppName
-        SignInAudience = "AzureADMyOrg"
-        Notes = "Production data synchronization service"
-    }
-    $DataSyncApp = New-MgApplication @DataSyncAppParams
-    Write-Verbose "    ->  Application created: $DataSyncAppName"
-    Start-Sleep -Seconds $standardDelay
-}
-
-$DataSyncAppId = $DataSyncApp.AppId
-
-Write-Verbose "[*] Creating service principal for data sync app..."
-$ExistingDataSyncSP = Get-MgServicePrincipal -Filter "appId eq '$DataSyncAppId'" -ErrorAction SilentlyContinue
-
-if ($ExistingDataSyncSP) {
-    $DataSyncSP = $ExistingDataSyncSP
-    Write-Verbose "    ->  Service principal exists"
-} else {
-    $DataSyncSPParams = @{
-        AppId = $DataSyncAppId
-        DisplayName = $DataSyncAppName
-    }
-    $DataSyncSP = New-MgServicePrincipal @DataSyncSPParams
-    Write-Verbose "    ->  Service principal created"
-    Start-Sleep -Seconds $standardDelay
-}
-
-# Make it visible in Azure Portal UI
-Update-MgServicePrincipal -ServicePrincipalId $DataSyncSP.Id -Tags $Tags
+$DataSyncAppResult = New-EntraGoatApplication -DisplayName $DataSyncAppName -Description "Production data synchronization service"
+$DataSyncApp = $DataSyncAppResult.Application
+$DataSyncSP = $DataSyncAppResult.ServicePrincipal
+$DataSyncAppId = $DataSyncAppResult.AppId
 
 # Grant Organization.ReadWrite.All to DataSync SP
 Write-Verbose "[!] Granting Organization.ReadWrite.All to DataSync SP..."
@@ -436,41 +548,10 @@ if (-not $hasDirectoryRead) {
 
 #region Create Organization Config Manager app and SP
 Write-Verbose "[*] Creating organization config manager application: $OrgConfigAppName"
-$ExistingOrgConfigApp = Get-MgApplication -Filter "displayName eq '$OrgConfigAppName'" -ErrorAction SilentlyContinue
-
-if ($ExistingOrgConfigApp) {
-    $OrgConfigApp = $ExistingOrgConfigApp
-    Write-Verbose "    ->  Application exists: $OrgConfigAppName"
-} else {
-    $OrgConfigAppParams = @{
-        DisplayName = $OrgConfigAppName
-        SignInAudience = "AzureADMyOrg"
-        Notes = "Service for managing organization-wide configurations"
-    }
-    $OrgConfigApp = New-MgApplication @OrgConfigAppParams
-    Write-Verbose "    ->  Application created: $OrgConfigAppName"
-    Start-Sleep -Seconds $standardDelay
-}
-
-$OrgConfigAppId = $OrgConfigApp.AppId
-
-Write-Verbose "[*] Creating service principal for org config app..."
-$ExistingOrgConfigSP = Get-MgServicePrincipal -Filter "appId eq '$OrgConfigAppId'" -ErrorAction SilentlyContinue
-
-if ($ExistingOrgConfigSP) {
-    $OrgConfigSP = $ExistingOrgConfigSP
-    Write-Verbose "    ->  Service principal exists"
-} else {
-    $OrgConfigSPParams = @{
-        AppId = $OrgConfigAppId
-        DisplayName = $OrgConfigAppName
-    }
-    $OrgConfigSP = New-MgServicePrincipal @OrgConfigSPParams
-    Write-Verbose "    ->  Service principal created"
-    Start-Sleep -Seconds $standardDelay
-}
-
-Update-MgServicePrincipal -ServicePrincipalId $OrgConfigSP.Id -Tags $Tags
+$OrgConfigAppResult = New-EntraGoatApplication -DisplayName $OrgConfigAppName -Description "Service for managing organization-wide configurations"
+$OrgConfigApp = $OrgConfigAppResult.Application
+$OrgConfigSP = $OrgConfigAppResult.ServicePrincipal
+$OrgConfigAppId = $OrgConfigAppResult.AppId
 
 
 # Grant Policy.ReadWrite.AuthenticationMethod to OrgConfig SP
@@ -509,73 +590,34 @@ if (-not $hasDirectoryRead) {
 
 #region Create Authentication Policy Managers Group
 Write-Verbose "[*] Creating Authentication Policy Managers group..."
-$ExistingAuthPolicyGroup = Get-MgGroup -Filter "displayName eq '$AuthPolicyGroupName'" -ErrorAction SilentlyContinue
+$AuthPolicyAdminRoleId = "0526716b-113d-4c15-b2c8-68e3c22b9f80"
+$AppAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
 
-if ($ExistingAuthPolicyGroup) {
-    $AuthPolicyGroup = $ExistingAuthPolicyGroup
-    Write-Verbose "    ->  Group exists: $AuthPolicyGroupName"
-} else {
-    $GroupParams = @{
-        DisplayName = $AuthPolicyGroupName
-        Description = "Group with Authentication Policy Administrator role"
-        MailEnabled = $false
-        MailNickname = "auth-policy-managers"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true
-    }
-    $AuthPolicyGroup = New-MgGroup @GroupParams
-    Write-Verbose "    ->  Group created: $AuthPolicyGroupName"
-    Start-Sleep -Seconds $standardDelay
-}
+# Create group with Authentication Policy Administrator role
+$AuthPolicyGroup = New-EntraGoatGroup -GroupName $AuthPolicyGroupName -Description "Group with Authentication Policy Administrator role" -MailNickname "auth-policy-managers" -RoleTemplateId $AuthPolicyAdminRoleId
 
-# Assign Authentication Policy Administrator role to the group
-Write-Verbose "[*] Assigning Authentication Policy Administrator role to group..."
-$AuthPolicyAdminRoleId = "0526716b-113d-4c15-b2c8-68e3c22b9f80"  
-
-# Check if role is activated and if the group already has it
-$AuthPolicyRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$AuthPolicyAdminRoleId'" -ErrorAction SilentlyContinue
-if (-not $AuthPolicyRole) {
-    Write-Verbose "    ->  Activating Authentication Policy Administrator role template..."
-    $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $AuthPolicyAdminRoleId
-    $AuthPolicyRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
-    Start-Sleep -Seconds $standardDelay
-}
-
-$ExistingRoleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $AuthPolicyRole.Id -All -ErrorAction SilentlyContinue
-$IsAlreadyMember = $false
-if ($ExistingRoleMembers) {
-    foreach ($member in $ExistingRoleMembers) {
-        if ($member.Id -eq $AuthPolicyGroup.Id) {
-            $IsAlreadyMember = $true
-            break
+# Add dummy users to the Auth Policy group for realism
+Write-Verbose "[*] Adding dummy users to Auth Policy group..."
+$authPolicyMembers = @($createdDummyUsers[0], $createdDummyUsers[1], $createdDummyUsers[2])  # Alice, Bob, and Carol
+foreach ($member in $authPolicyMembers) {
+    $currentMembers = Get-MgGroupMember -GroupId $AuthPolicyGroup.Id -All -ErrorAction SilentlyContinue
+    $isMember = $currentMembers | Where-Object { $_.Id -eq $member.Id }
+    
+    if (-not $isMember) {
+        $memberParams = @{
+            "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($member.Id)"
+        }
+        try {
+            New-MgGroupMemberByRef -GroupId $AuthPolicyGroup.Id -BodyParameter $memberParams
+            Write-Verbose "    -> Added $($member.DisplayName) to Auth Policy group"
+        } catch {
+            Write-Verbose "    -> $($member.DisplayName) already in group"
         }
     }
 }
 
-if (-not $IsAlreadyMember) {
-    Write-Verbose "    ->  Assigning role to group..."
-    try {
-        $RoleMemberParams = @{ "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($AuthPolicyGroup.Id)" }
-        New-MgDirectoryRoleMemberByRef -DirectoryRoleId $AuthPolicyRole.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
-        Write-Verbose "    ->  Role assigned successfully."
-        Start-Sleep -Seconds $longReplicationDelay
-    } catch {
-        if ($_.Exception.Message -like "*already exist*") {
-            Write-Verbose "    ->  Role was already assigned."
-        } else {
-            Write-Host "[-] Failed to assign role: $($_.Exception.Message)" -ForegroundColor Red
-        }
-    }
-} else {
-    Write-Verbose "    ->  Group already has Authentication Policy Administrator role."
-}
-
-
+# Assign Application Administrator role to the group
 Write-Verbose "[*] Assigning Application Administrator role to group Auth Policy group..."
-
-# Assign app admin role to the group
-$AppAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3" 
-
 $AppAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$AppAdminRoleId'" -ErrorAction SilentlyContinue
 if (-not $AppAdminRole) {
     Write-Verbose "    ->  Activating Application Administrator role template..."
@@ -612,6 +654,38 @@ if (-not $IsAlreadyAppAdmin) {
     }
 } else {
     Write-Verbose "    ->  Group already has Application Administrator role."
+}
+#endregion
+
+#region Create AI Operations Team Group
+Write-Verbose "[*] Creating AI Operations Team group..."
+$AIAdminGroup = New-EntraGoatGroup -GroupName $AIAdminGroupName -Description "Team responsible for managing AI operations and services" -MailNickname "ai-ops-team" -RoleTemplateId "d2562ede-74db-457e-a7b6-544e236ebb61"
+
+# Make Terence eligible owner of AI Operations group
+Write-Verbose "[!] Making terence user eligible owner of AI Operations group..."
+$eligibleAIOwnerParams = @{
+    accessId          = "owner"
+    principalId       = $LowPrivUser.Id
+    groupId           = $AIAdminGroup.Id
+    action            = "adminAssign"
+    scheduleInfo      = @{
+        startDateTime = (Get-Date).ToUniversalTime().ToString("o")
+        expiration    = @{ 
+            type = "afterDuration"
+            duration = "P365D"  
+        }
+    }
+    justification     = "AI operations management responsibilities"
+}
+
+try {
+    $aiOwnershipResponse = Invoke-MgGraphRequest -Method POST `
+        -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/eligibilityScheduleRequests" `
+        -Body $eligibleAIOwnerParams -ContentType "application/json"
+    Write-Verbose "    ->  Eligible AI Operations ownership granted"
+    Start-Sleep -Seconds $standardDelay
+} catch {
+    Write-Verbose "    ->  Failed to create eligible AI Operations ownership: $($_.Exception.Message)"
 }
 #endregion
 
@@ -687,7 +761,7 @@ try {
     $membershipResponse = Invoke-MgGraphRequest -Method POST `
         -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/eligibilityScheduleRequests" `
         -Body $eligibleMemberParams -ContentType "application/json"
-    Write-Verbose "    ->  Eligible membership granted (vulnerability created)"
+    Write-Verbose "    ->  Eligible membership granted"
     Start-Sleep -Seconds $standardDelay
 } catch {
     Write-Verbose "    ->  Failed to create eligible membership: $($_.Exception.Message)"
@@ -701,9 +775,9 @@ $SetupSuccessful = $true # Assume success unless an exit occurred
 if ($VerbosePreference -eq 'Continue') {
 
     Write-Host ""
-    Write-Host "|==============================================================|" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
     Write-Host "|             SCENARIO 6 SETUP COMPLETED (VERBOSE)             |" -ForegroundColor Cyan
-    Write-Host "|==============================================================|" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
     Write-Host ""
 
     Write-Host "`nSERVICE PRINCIPALS:" -ForegroundColor Yellow
@@ -711,6 +785,11 @@ if ($VerbosePreference -eq 'Continue') {
     Write-Host " - Legacy SP: $LegacyAutomationAppName" -ForegroundColor Cyan
     Write-Host " - Data Sync SP: $DataSyncAppName" -ForegroundColor Cyan
     Write-Host " - Auth Policy SP: $AuthPolicyAdminAppName" -ForegroundColor Cyan
+
+    Write-Host "`nGROUPS:" -ForegroundColor Yellow
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host " - Auth Policy Group: $AuthPolicyGroupName" -ForegroundColor Cyan
+    Write-Host " - AI Operations Group: $AIAdminGroupName" -ForegroundColor Cyan
 
     Write-Host "`nFLAG: " -ForegroundColor Green -NoNewline
     Write-Host "$Flag" -ForegroundColor Cyan

@@ -56,7 +56,7 @@ $RequiredModules = @(
 )
 $MissingModules = @()
 foreach ($moduleName in $RequiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $moduleName)) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
         $MissingModules += $moduleName
     }
 }
@@ -67,10 +67,13 @@ if ($MissingModules.Count -gt 0) {
     if ($choice -eq 'Y') {
         try {
             Write-Host "Attempting to install $($MissingModules -join ', ') from PowerShell Gallery. This may take a moment..." -ForegroundColor Yellow
-            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop -Verbose:$false
             Write-Verbose "[+] Successfully attempted to install missing modules."
             foreach ($moduleName in $MissingModules) {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "   Imported $moduleName"
             }
         } catch {
@@ -85,9 +88,12 @@ if ($MissingModules.Count -gt 0) {
     }
 } else {
     foreach ($moduleName in $RequiredModules) {
-        if (-not (Get-Module -Name $moduleName)) {
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
             try {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "[+] Imported module $moduleName."
             } catch {
                 Write-Host "[-] " -ForegroundColor Red -NoNewline
@@ -302,7 +308,7 @@ function Set-GroupOwnership {
             "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($User.Id)"
         }
         New-MgGroupOwnerByRef -GroupId $Group.Id -BodyParameter $OwnerParams
-        Write-Verbose "   -> Ownership granted for $GroupName (vulnerability created)"
+        Write-Verbose "   -> Ownership granted for $GroupName"
         Start-Sleep -Seconds $standardDelay
     } else {
         Write-Verbose "   -> Already owner of $GroupName"
@@ -630,7 +636,7 @@ Start-Sleep -Seconds $standardDelay  # Let memberships settle and propagate
 #endregion
 
 #region Set Low-Priv User as Owner of Groups (THE MISCONFIGURATION)
-Write-Verbose "[!] CREATING MISCONFIGURATION: Setting IT support user as owner of multiple groups..."
+Write-Verbose "[!] CREATING MISCONFIGURATION: Setting IT support user as owner of IT Application Managers group..."
 
 # Set ownership for all groups
 Set-GroupOwnership -Group $AppAdminGroup -User $LowPrivUser -GroupName "IT Application Managers"
@@ -743,6 +749,8 @@ if ($ownerCheck) {
     Write-Verbose "   -> [-] IT support user does NOT own Finance Department group"
 }
 
+Start-Sleep -Seconds $standardDelay
+
 # Verify SP membership in priv auth group
 $privAuthMembers = Get-MgGroupMember -GroupId $PrivAuthGroup.Id -All -ErrorAction SilentlyContinue
 $spMemberCheck = $false
@@ -772,17 +780,10 @@ $SetupSuccessful = ($ownerChecks -notcontains $false) #-and $spMemberCheck
 #region Output Summary
 if ($VerbosePreference -eq 'Continue') {
     Write-Host ""
-    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
-    Write-Host "|                      SCENARIO 3 SETUP                        |" -ForegroundColor Green
-    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
-
-    Write-Host "`nEXPLOITATION CHAIN:" -ForegroundColor Yellow
-    Write-Host "----------------------------" -ForegroundColor DarkGray
-    Write-Host "  - IT support user owns multiple groups with different roles" -ForegroundColor White
-    Write-Host "  - Can add self to any group to gain corresponding privileges" -ForegroundColor White
-    Write-Host "  - Target SP is member of Privileged Auth Admin group" -ForegroundColor White
-    Write-Host "  - Can add credentials to target SP" -ForegroundColor White
-    Write-Host "  - Can reset Global Admin password" -ForegroundColor White
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host "|             SCENARIO 3 SETUP COMPLETED (VERBOSE)             |" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host ""
 
     Write-Host "`nGROUPS OWNED BY IT SUPPORT USER:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
@@ -844,7 +845,7 @@ if ($VerbosePreference -eq 'Continue') {
 
     } else {
         Write-Host "[-] " -ForegroundColor Red -NoNewline
-        Write-Host "Scenario 3 setup failed - give it another shot or run with -Verbose flag to reveal more for debugging (spoiler alert???)." -ForegroundColor White
+        Write-Host "Scenario 3 setup failed - give it another shot or run with -Verbose flag to reveal more for debugging (spoiler alert!)." -ForegroundColor White
 }
 Write-Host ""
 }

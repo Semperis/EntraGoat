@@ -21,13 +21,13 @@ param(
 
 # Configuration Variables (must match setup script)
 $AppAdminGroupName = "Application Operations Team"
-$PrivAuthGroupName = "Authentication Management Team"
+$PrivAuthGroupName = "Global Infrastructure Team"
 $TargetAppName = "Infrastructure Monitoring Tool"
 
 Write-Host ""
-Write-Host "|------------------------------------------------------------|" -ForegroundColor Red
-Write-Host "|            ENTRAGOAT SCENARIO 4 - CLEANUP PROCESS          |" -ForegroundColor Red
-Write-Host "|------------------------------------------------------------|" -ForegroundColor Red
+Write-Host "|------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|            ENTRAGOAT SCENARIO 4 - CLEANUP PROCESS          |" -ForegroundColor Cyan
+Write-Host "|------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
 #region Module Verification and Import
@@ -42,25 +42,21 @@ $RequiredModules = @(
 )
 
 foreach ($module in $RequiredModules) {
-    if (-not (Get-Module -Name $module -ErrorAction SilentlyContinue)) {
-        try {
-            Import-Module $module -ErrorAction Stop
-            Write-Verbose "[+] Imported $module"
-        } catch {
-            Write-Host "[-] Failed to import module $module`: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host "  Please ensure Microsoft Graph SDK is installed." -ForegroundColor Yellow
-            exit 1
+    try {
+        Import-Module $module -ErrorAction SilentlyContinue -Verbose:$false
+        if (-not (Get-Module -Name $module -ErrorAction SilentlyContinue -Verbose:$false)) {
+            throw "Failed to import $module"
         }
-    } else {
-        Write-Verbose "[*] $module already loaded"
+        Write-Verbose "[+] Imported module $module."
+    } catch {
+        Write-Host "[-] Failed to import module $module`: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  Please ensure Microsoft Graph SDK is installed." -ForegroundColor Yellow
+        exit 1
     }
 }
-Write-Verbose "[+] All required modules are available"
 #endregion
 
 #region Microsoft Graph Connection
-Write-Verbose "[*] Establishing Microsoft Graph connection..."
-
 $RequiredScopes = @(
     "Application.ReadWrite.All",
     "AppRoleAssignment.ReadWrite.All",
@@ -120,12 +116,11 @@ if ($AppAdminGroup) {
     # Remove eligible group ownership assignments
     try {
         $EligibleOwnershipUri = "/beta/identityGovernance/privilegedAccess/group/eligibilitySchedules?`$filter=groupId eq '$($AppAdminGroup.Id)' and accessId eq 'owner'"
-        $EligibleOwnerships = Invoke-MgGraphRequest -Uri $EligibleOwnershipUri -Method GET -ErrorAction SilentlyContinue
+        $EligibleOwnerships = Invoke-MgGraphRequest -Uri $EligibleOwnershipUri -Method GET -ErrorAction SilentlyContinue | Out-Null
         
         if ($EligibleOwnerships.value) {
             foreach ($ownership in $EligibleOwnerships.value) {
                 try {
-                    Write-Verbose " Removing eligible ownership: $($ownership.id)"
                     $RemovalRequest = @{
                         action = "adminRemove"
                         principalId = $ownership.principalId
@@ -140,7 +135,7 @@ if ($AppAdminGroup) {
                     
                     Write-Host "[+] Removed eligible group ownership" -ForegroundColor Green
                 } catch {
-                    Write-Verbose "Failed to remove eligible ownership: $($_.Exception.Message)"
+                    Write-Host "Failed to remove eligible ownership: $($_.Exception.Message)"
                 }
             }
         }
@@ -167,7 +162,7 @@ if ($AppAdminGroup) {
                     New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -BodyParameter $RemovalRequest -ErrorAction Stop | Out-Null
                     Write-Host "[+] Removed eligible role assignment" -ForegroundColor Green
                 } catch {
-                    Write-Verbose "Failed to remove eligible role: $($_.Exception.Message)"
+                    Write-Host "Failed to remove eligible role: $($_.Exception.Message)" 
                 }
             }
         }
@@ -178,7 +173,7 @@ if ($AppAdminGroup) {
 #endregion
 
 #region Remove Users
-Write-Host "[*] Removing users..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing users..."
 
 foreach ($UserUPN in $AllUsersToRemove) {
     $User = Get-MgUser -Filter "userPrincipalName eq '$UserUPN'" -ErrorAction SilentlyContinue
@@ -200,18 +195,18 @@ foreach ($UserUPN in $AllUsersToRemove) {
             }
             
             Remove-MgUser -UserId $User.Id -Confirm:$false -ErrorAction Stop
-            Write-Host "[+] Deleted user: $UserUPN" -ForegroundColor Green
+            Write-Host "    [+] Deleted user: $UserUPN" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] User not found: $UserUPN" -ForegroundColor Yellow
+        Write-Host "    [-] User not found: $UserUPN" -ForegroundColor Yellow
     }
 }
 #endregion
 
 #region Remove Groups
-Write-Host "[*] Removing groups..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing groups..."
 
 foreach ($GroupName in @($AppAdminGroupName, $PrivAuthGroupName)) {
     $Group = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
@@ -228,9 +223,9 @@ foreach ($GroupName in @($AppAdminGroupName, $PrivAuthGroupName)) {
                     if ($GroupInRole) {
                         try {
                             Remove-MgDirectoryRoleMemberByRef -DirectoryRoleId $Role.Id -DirectoryObjectId $Group.Id -ErrorAction Stop
-                            Write-Host "[+] Removed group from role: $($Role.DisplayName)" -ForegroundColor Green
+                            Write-Host "    [+] Removed group from role: $($Role.DisplayName)" -ForegroundColor Green
                         } catch {
-                            Write-Verbose "Failed to remove group from role $($Role.DisplayName): $($_.Exception.Message)"
+                            Write-Host "Failed to remove group from role $($Role.DisplayName): $($_.Exception.Message)"
                         }
                     }
                 }
@@ -238,18 +233,18 @@ foreach ($GroupName in @($AppAdminGroupName, $PrivAuthGroupName)) {
             
             # Remove the group
             Remove-MgGroup -GroupId $Group.Id -Confirm:$false -ErrorAction Stop
-            Write-Host "[+] Deleted group: $GroupName" -ForegroundColor Green
+            Write-Host "    [+] Deleted group: $GroupName" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete group: $GroupName - $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete group: $GroupName - $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] Group not found: $GroupName" -ForegroundColor Yellow
+        Write-Host "    [-] Group not found: $GroupName" -ForegroundColor Yellow
     }
 }
 #endregion
 
 #region Remove Service Principal and Application
-Write-Host "[*] Removing service principal and application..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing service principal and application registration..."
 
 # Find and remove Service Principal first
 $TargetSP = Get-MgServicePrincipal -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
@@ -262,9 +257,9 @@ if ($TargetSP) {
             if ($membership.OdataType -eq "#microsoft.graph.group") {
                 try {
                     Remove-MgGroupMemberByRef -GroupId $membership.Id -DirectoryObjectId $TargetSP.Id -ErrorAction Stop
-                    Write-Verbose "Removed service principal from group: $($membership.DisplayName)"
+                    Write-Host "Removed service principal from group: $($membership.DisplayName)" -ForegroundColor Green
                 } catch {
-                    Write-Verbose "Failed to remove SP from group: $($_.Exception.Message)"
+                    Write-Host "Failed to remove SP from group: $($_.Exception.Message)"
                 }
             }
         }
@@ -275,20 +270,20 @@ if ($TargetSP) {
         foreach ($Assignment in $AppRoleAssignments) {
             try {
                 Remove-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $TargetSP.Id -AppRoleAssignmentId $Assignment.Id -ErrorAction Stop
-                Write-Verbose "Removed app role assignment"
+                Write-Verbose "Removed app role assignment" 
             } catch {
-                Write-Verbose "Failed to remove app role assignment: $($_.Exception.Message)"
+                Write-Verbose "Failed to remove app role assignment: $($_.Exception.Message)" 
             }
         }
         
         # Remove the service principal
         Remove-MgServicePrincipal -ServicePrincipalId $TargetSP.Id -Confirm:$false -ErrorAction Stop
-        Write-Host "[+] Deleted service principal: $TargetAppName" -ForegroundColor Green
+        Write-Host "    [+] Deleted service principal: $TargetAppName" -ForegroundColor Green
     } catch {
-        Write-Host "[-] Failed to delete service principal: $TargetAppName - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    [-] Failed to delete service principal: $TargetAppName - $($_.Exception.Message)"
     }
 } else {
-    Write-Host "[-] Service principal not found: $TargetAppName" -ForegroundColor Yellow
+    Write-Host "    [-] Service principal not found: $TargetAppName" -ForegroundColor Yellow
 }
 
 # Find and remove app registration
@@ -296,23 +291,21 @@ $TargetApp = Get-MgApplication -Filter "displayName eq '$TargetAppName'" -ErrorA
 if ($TargetApp) {
     try {
         Remove-MgApplication -ApplicationId $TargetApp.Id -Confirm:$false -ErrorAction Stop
-        Write-Host "[+] Deleted application registration: $TargetAppName" -ForegroundColor Green
+        Write-Host "    [+] Deleted application registration: $TargetAppName" -ForegroundColor Green
     } catch {
-        Write-Host "[-] Failed to delete application registration: $TargetAppName - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    [-] Failed to delete application registration: $TargetAppName - $($_.Exception.Message)" -ForegroundColor Red
     }
 } else {
-    Write-Host "[-] Application registration not found: $TargetAppName" -ForegroundColor Yellow
+    Write-Host "    [-] Application registration not found: $TargetAppName" -ForegroundColor Yellow
 }
 #endregion
 
 #region Wait for Deletion Completion
-Write-Host "[*] Waiting for all objects to be fully purged..." -ForegroundColor Cyan
+Write-Host "`n[*] Waiting for objects to be fully purged (this can take a moment)..."
 
-function Wait-ForDeletion {
+function Wait-ForAllDeletions {
     param (
-        [string[]]$UserUPNs,
-        [string]$AppName,
-        [string[]]$GroupNames,
+        [array]$ObjectsToCheck,
         [int]$TimeoutSeconds = 90
     )
     
@@ -320,29 +313,23 @@ function Wait-ForDeletion {
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         $AllDeleted = $true
         
-        # Check users
-        foreach ($UPN in $UserUPNs) {
-            $UserExists = Get-MgUser -Filter "userPrincipalName eq '$UPN'" -ErrorAction SilentlyContinue
-            if ($UserExists) {
-                $AllDeleted = $false
-                break
-            }
-        }
-        
-        # Check application and service principal
-        if ($AppName -and $AllDeleted) {
-            $AppExists = Get-MgApplication -Filter "displayName eq '$AppName'" -ErrorAction SilentlyContinue
-            $SPExists = Get-MgServicePrincipal -Filter "displayName eq '$AppName'" -ErrorAction SilentlyContinue
-            if ($AppExists -or $SPExists) {
-                $AllDeleted = $false
-            }
-        }
-        
-        # Check groups
-        if ($GroupNames -and $AllDeleted) {
-            foreach ($GroupName in $GroupNames) {
-                $GroupExists = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
-                if ($GroupExists) {
+        foreach ($obj in $ObjectsToCheck) {
+            if ($obj.Type -eq "User") {
+                $Exists = Get-MgUser -Filter "userPrincipalName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            } elseif ($obj.Type -eq "Group") {
+                $Exists = Get-MgGroup -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            } elseif ($obj.Type -eq "Application") {
+                $AppExists = Get-MgApplication -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                $SPExists = Get-MgServicePrincipal -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($AppExists -or $SPExists) {
                     $AllDeleted = $false
                     break
                 }
@@ -350,53 +337,43 @@ function Wait-ForDeletion {
         }
         
         if ($AllDeleted) {
-            Write-Host "[+] Confirmed deletion of all target objects" -ForegroundColor Green
+            Write-Host "    [+] Confirmed inexistence of all requested objects" -ForegroundColor Green
             return $true
         }
         
-        Write-Verbose "Waiting for deletion to complete..."
+        Write-Verbose "Still waiting for deletion..."
         Start-Sleep -Seconds 5
     }
     
-    Write-Host "[-] Warning: Timed out waiting for deletion. Some objects may still exist." -ForegroundColor Yellow
+    Write-Host "    [-] Warning: Timed out waiting for deletion. Some objects may still exist." -ForegroundColor Yellow
     return $false
 }
 
-$DeletionComplete = Wait-ForDeletion -UserUPNs $AllUsersToRemove -AppName $TargetAppName -GroupNames @($AppAdminGroupName, $PrivAuthGroupName)
+$ObjectsToCheck = @()
+foreach ($UPN in $AllUsersToRemove) {
+    $ObjectsToCheck += @{ Type = "User"; Name = $UPN }
+}
+foreach ($GroupName in @($AppAdminGroupName, $PrivAuthGroupName)) {
+    $ObjectsToCheck += @{ Type = "Group"; Name = $GroupName }
+}
+$ObjectsToCheck += @{ Type = "Application"; Name = $TargetAppName }
+
+$DeletionComplete = Wait-ForAllDeletions -ObjectsToCheck $ObjectsToCheck
 #endregion
 
-#region Cleanup Summary
-Write-Host "`nCLEANED UP OBJECTS:" -ForegroundColor Yellow
-Write-Host "  Users:" -ForegroundColor White
-foreach ($UPN in $AllUsersToRemove) {
-    Write-Host "$UPN" -ForegroundColor Cyan
-}
-Write-Host ""
-Write-Host "Groups:" -ForegroundColor White
-Write-Host "$AppAdminGroupName" -ForegroundColor Cyan
-Write-Host "$PrivAuthGroupName" -ForegroundColor Cyan
-Write-Host ""
-Write-Host " Applications:" -ForegroundColor White
-Write-Host "$TargetAppName (App Registration + Service Principal)" -ForegroundColor Cyan
-Write-Host ""
-Write-Host " PIM Assignments:" -ForegroundColor White
-Write-Host " Eligible group ownership assignments" -ForegroundColor Cyan
-Write-Host " Eligible role assignments" -ForegroundColor Cyan
-
 if ($DeletionComplete) {
-    Write-Host "`n[OK] All objects successfully removed from tenant" -ForegroundColor Green
-    Write-Host "Ready for fresh Scenario 4 setup!" -ForegroundColor Green
+    Write-Host "`n[+] All objects successfully removed from tenant" -ForegroundColor DarkGreen
 } else {
     Write-Host "`n Some objects may still be processing deletion" -ForegroundColor Yellow
     Write-Host "   Wait a few minutes before running setup again" -ForegroundColor Yellow
 }
 #endregion
 
-# Cleanup - disconnect from Graph
-try {
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
-} catch {
-    # Ignore cleanup errors
-}
+# disconnect from Graph
+# try {
+#     Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+# } catch {
+#     # Ignore cleanup errors
+# }
 
-Write-Host "`nCleanup process complete." -ForegroundColor Cyan
+Write-Host "`nCleanup process for Scenario 4 complete." -ForegroundColor White

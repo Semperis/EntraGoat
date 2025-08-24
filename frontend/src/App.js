@@ -29,7 +29,7 @@ function App() {
         'Ownership has its privileges. What do you really own?',
         'Authentication admins love to delegate. Maybe too much.',
         'Service principals with privileged roles present interesting opportunities.',
-        'Privileged Authentication Administrator can reset any password.'
+        'Privileged Authentication Administrator can set and reset authentication method information for any user in the tenant.',
       ],
       completed: false
     },
@@ -65,10 +65,10 @@ function App() {
       },
       hints: [
         'Owning a group isn\'t harmless, right?',
-        'Group owners can manage group memberships (and even add themselves..)',
+        'Groups can have role assignments.',
         'Application Administrators can manage service principals, but how?',
-        'Service principals can be members of groups too???',
-        'Privileged Authentication Administrator can reset any password.'
+        'Service principals can be members of groups too.',
+        'Privileged Authentication Administrator can set and reset authentication method information for any user in the tenant.',
       ],
       completed: false
     },
@@ -83,18 +83,18 @@ function App() {
         password: 'GoatAccess!123'
       },
       hints: [
-        'Check your PIM assignments, either through the CLI, Azure portal or Entra admin center. You might be more ~eligible~ than you think.',
-        'Eligible roles require activation but check the approval requirements.',
+        'Group owners can manage group memberships (and even add themselves..)',
+        'Check your PIM assignments, either through the CLI, Azure portal or Entra admin center. You might be more eligible than you think.',
         'Group-based role eligibility can create interesting chains.',
         'Combine activated access and clever targeting.',
-        'Privileged Authentication Administrator can reset any password (and MFA???)'
+        'Global Administrators are.. well.. Global Administrators. They can reset any password (and MFA).'
       ],
       completed: false
     },
     {
       id: 5,
       title: 'Department of Escalations - AU Ready for This?',
-      description: 'You\'re embedded in a stealthy APT crew - each unit plays a role: credential harvesting, infrastructure recon, privilege escalation, persistence, and data exfiltration for diplomatic leverage. You\'re on the escalation arm. The access team just tossed you credentials for Sarah Mitchell, an IT support tech with permissions subtle enough to evade scrutiny, but strong enough to be weaponized. Your mission? Poison profile attributes, slip through a dynamic AU like a ghost in the directory, and punch a Global Admin backdoor for the persistence team. Time\'s tight, negotiations won\'t wait.',
+      description: 'You\'re embedded in a stealthy APT crew - each unit plays a role: credential harvesting, infrastructure recon, privilege escalation, persistence, and data exfiltration for diplomatic leverage. You\'re on the escalation arm. The access team just tossed you credentials for Sarah Connor, an HR team lead with permissions subtle enough to evade scrutiny, but strong enough to be weaponized. Your mission? Poison profile attributes, slip through a dynamic AU like a ghost in the directory, and punch a Global Admin backdoor for the persistence team. Time\'s tight, negotiations won\'t wait.',
       difficulty: 'Advanced',
       flag: 'EntraGoat{Dyn@m1c_AU_P01s0n1ng_FTW!}',
       startingCredentials: {
@@ -103,10 +103,10 @@ function App() {
       },
       hints: [
         'Basic update permissions can have big impact.',
-        'Check your PIM assignments, either through the CLI, Azure portal or Entra admin center. You might be more ~eligible~ than you think.',
+        'Check your PIM assignments, either through the CLI, Azure portal or Entra admin center. You might be more eligible than you think.',
         'A little profile poisoning goes a long way in dynamic AUs.',
         'Administrative Unit role assignments may be scoped but still powerful.',
-        'Privileged Authentication Administrator can reset any password (and MFA)'
+        'Privileged Authentication Administrator can set and reset authentication method information for any user in the tenant.',
       ],
       completed: false
     },
@@ -125,8 +125,8 @@ function App() {
       hints: [
         'Leaked creds? Time to check what legacy automation SP can still do.',
         'Ownership = privilges. SPs managing other SPs is a red flag.',
-        'CBA lets you skip the password - if the CA is trusted.',
-        'Service principals with Policy.* and Org.* permissions are dangerous (like really dangerous).',
+        'Service principals with Policy.* and Org.* permissions are dangerous (like really dangerous)',
+        'Authentication Policy Administrator role allows enabling CBA when it is granted to a user (or to a group..)',
         'Try enabling CBA with one SP, then use another to upload a trusted root CA and forge your way in. No password? No problem.'
       ],
       completed: false

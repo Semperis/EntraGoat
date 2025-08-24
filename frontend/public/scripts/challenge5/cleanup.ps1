@@ -6,7 +6,7 @@ To be run with Global Administrator privileges.
 .DESCRIPTION
 Cleans up:
 - Users (sarah.connor, EntraGoat-admin-s5, and dummy users)
-- Groups (Regional Access Coordinators and Tier-1 Support Team)
+- Groups (Regional HR Coordinators and HR Support Team)
 - PIM eligibility schedules
 - Directory role assignments
 - Custom role and its assignments
@@ -23,8 +23,10 @@ param(
 
 # Configuration - matching setup script
 $CustomRoleName = "User Profile Administrator"
-$SupportGroupName = "Tier-1 Support Team"
-$PrivilegedGroupName = "Regional Access Coordinators"
+$SupportGroupName = "HR Support Team"
+$PrivilegedGroupName = "Regional HR Coordinators"
+$KnowledgeGroupName = "Knowledge Management Team"
+$KaizalaGroupName = "Kaizala Operations Team"
 $AUName = "HR Department"
 
 $RequiredScopes = @(
@@ -48,15 +50,16 @@ Write-Host ""
 Write-Verbose "[*] Checking required Microsoft Graph modules..."
 $RequiredCleanupModules = @("Microsoft.Graph.Authentication", "Microsoft.Graph.Applications", "Microsoft.Graph.Users", "Microsoft.Graph.Identity.DirectoryManagement")
 foreach ($moduleName in $RequiredCleanupModules) {
-    if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue)) {
-        try {
-            Import-Module $moduleName -ErrorAction Stop
-            Write-Verbose "[+] Imported module $moduleName."
-        } catch {
-            Write-Host "[-] " -ForegroundColor Red -NoNewline
-            Write-Host "Failed to import module $moduleName. Please ensure Microsoft Graph SDK is installed. Error: $($_.Exception.Message)" -ForegroundColor White
-            exit 1
+    try {
+        Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+            throw "Failed to import $moduleName"
         }
+        Write-Verbose "[+] Imported module $moduleName."
+    } catch {
+        Write-Host "[-] " -ForegroundColor Red -NoNewline
+        Write-Host "Failed to import module $moduleName. Please ensure Microsoft Graph SDK is installed. Error: $($_.Exception.Message)" -ForegroundColor White
+        exit 1
     }
 }
 #endregion
@@ -180,74 +183,104 @@ if ($CustomRole) {
 }
 
 # Remove Groups
-Write-Host "Removing groups..." -ForegroundColor Cyan
-foreach ($GroupName in @($SupportGroupName, $PrivilegedGroupName)) {
+Write-Host "`n[*] Removing groups..."
+
+foreach ($GroupName in @($SupportGroupName, $PrivilegedGroupName, $KnowledgeGroupName, $KaizalaGroupName)) {
     $Group = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
     
     if ($Group) {
         try {
             Remove-MgGroup -GroupId $Group.Id -Confirm:$false
-            Write-Host "[+] Deleted group: $GroupName" -ForegroundColor Green
+            Write-Host "    [+] Deleted group: $GroupName" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete group: $GroupName - $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete group: $GroupName - $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] Group not found: $GroupName" -ForegroundColor Yellow
+        Write-Host "    [-] Group not found: $GroupName" -ForegroundColor Yellow
     }
 }
 
 # Remove Users
-Write-Host "Removing users..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing users..."
+
 foreach ($UserUPN in $AllUserUPNs) {
     $User = Get-MgUser -Filter "userPrincipalName eq '$UserUPN'" -ErrorAction SilentlyContinue
     if ($User) {
         try {
             Remove-MgUser -UserId $User.Id -Confirm:$false
-            Write-Host "[+] Deleted user: $UserUPN" -ForegroundColor Green
+            Write-Host "    [+] Deleted user: $UserUPN" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] User not found: $UserUPN" -ForegroundColor Yellow
+        Write-Host "    [-] User not found: $UserUPN" -ForegroundColor Yellow
     }
 }
 
 # Wait for deletion
-function Wait-ForDeletion {
+function Wait-ForAllDeletions {
     param (
-        [string]$UPN,
-        [string]$GroupName,
-        [string]$AUName,
-        [int]$TimeoutSeconds = 60
+        [array]$ObjectsToCheck,
+        [int]$TimeoutSeconds = 90
     )
+    
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $exists = $false
+        $AllDeleted = $true
         
-        if ($UPN -and (Get-MgUser -Filter "userPrincipalName eq '$UPN'" -ErrorAction SilentlyContinue)) {
-            $exists = $true
-        }
-        if ($GroupName -and (Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue)) {
-            $exists = $true
-        }
-        if ($AUName -and (Get-MgDirectoryAdministrativeUnit -Filter "displayName eq '$AUName'" -ErrorAction SilentlyContinue)) {
-            $exists = $true
+        foreach ($obj in $ObjectsToCheck) {
+            if ($obj.Type -eq "User") {
+                $Exists = Get-MgUser -Filter "userPrincipalName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            } elseif ($obj.Type -eq "Group") {
+                $Exists = Get-MgGroup -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            } elseif ($obj.Type -eq "AdministrativeUnit") {
+                $Exists = Get-MgDirectoryAdministrativeUnit -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            }
         }
         
-        if (-not $exists) {
-            Write-Host "[+] Confirmed inexistence" -ForegroundColor Green
-            return
+        if ($AllDeleted) {
+            Write-Host "    [+] Confirmed inexistence of all requested objects" -ForegroundColor Green
+            return $true
         }
-        Start-Sleep -Seconds 3
+        
+        Write-Verbose "Still waiting for deletion..."
+        Start-Sleep -Seconds 5
     }
-    Write-Host "[-] Warning: Timed out waiting for deletion." -ForegroundColor Yellow
+    
+    Write-Host "    [-] Warning: Timed out waiting for deletion. Some objects may still exist."
+    return $false
 }
 
-Write-Host "Waiting for all objects to be fully purged before next setup..." -ForegroundColor Cyan
-Wait-ForDeletion -UPN $SupportUPN
-Wait-ForDeletion -UPN $AdminUPN
-Wait-ForDeletion -GroupName $SupportGroupName
-Wait-ForDeletion -GroupName $PrivilegedGroupName
-Wait-ForDeletion -AUName $AUName
+Write-Host "`n[*] Waiting for objects to be fully purged (this can take a moment)..."
 
-Write-Host "`nCleanup process complete." -ForegroundColor Cyan
+$ObjectsToCheck = @()
+$ObjectsToCheck += @{ Type = "User"; Name = $SupportUPN }
+$ObjectsToCheck += @{ Type = "User"; Name = $AdminUPN }
+$ObjectsToCheck += @{ Type = "Group"; Name = $SupportGroupName }
+$ObjectsToCheck += @{ Type = "Group"; Name = $PrivilegedGroupName }
+$ObjectsToCheck += @{ Type = "Group"; Name = $KnowledgeGroupName }
+$ObjectsToCheck += @{ Type = "Group"; Name = $KaizalaGroupName }
+$ObjectsToCheck += @{ Type = "AdministrativeUnit"; Name = $AUName }
+
+$DeletionComplete = Wait-ForAllDeletions -ObjectsToCheck $ObjectsToCheck
+
+if ($DeletionComplete) {
+    Write-Host "`n[+] All objects successfully removed from tenant" -ForegroundColor DarkGreen
+} else {
+    Write-Host "`n Some objects may still be processing deletion" -ForegroundColor Yellow
+    Write-Host "   Wait a few minutes before running setup again" -ForegroundColor Yellow
+}
+
+Write-Host "`nCleanup process for Scenario 5 complete." -ForegroundColor White

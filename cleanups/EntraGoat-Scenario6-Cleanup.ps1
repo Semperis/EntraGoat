@@ -26,6 +26,7 @@ $LegacyAutomationAppName = "Legacy-Automation-Service"
 $DataSyncAppName = "DataSync-Production"
 $OrgConfigAppName = "Organization-Config-Manager"
 $AuthPolicyGroupName = "Authentication Policy Managers"
+$AIAdminGroupName = "AI Operations Team"
 
 $RequiredScopes = @(
     "Application.ReadWrite.All",
@@ -47,9 +48,9 @@ Write-Host ""
 Write-Verbose "[*] Checking required Microsoft Graph modules..."
 $RequiredCleanupModules = @("Microsoft.Graph.Authentication", "Microsoft.Graph.Applications", "Microsoft.Graph.Users", "Microsoft.Graph.Identity.DirectoryManagement")
 foreach ($moduleName in $RequiredCleanupModules) {
-    if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
         try {
-            Import-Module $moduleName -ErrorAction Stop
+            Import-Module $moduleName -ErrorAction Stop -Verbose:$false
             Write-Verbose "[+] Imported module $moduleName."
         } catch {
             Write-Host "[-] " -ForegroundColor Red -NoNewline
@@ -73,10 +74,11 @@ $TenantDomain = ($Organization.VerifiedDomains | Where-Object IsDefault).Name
 $LowPrivUPN = "terence.mckenna@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s6@$TenantDomain"
 
-$dummyUserUPNs = @("alice.johnson@$TenantDomain", "bob.smith@$TenantDomain")
+$dummyUserUPNs = @("alice.johnson@$TenantDomain", "bob.smith@$TenantDomain", "carol.davis@$TenantDomain", "david.wilson@$TenantDomain")
 
 # Cleanup Groups
-Write-Host "Removing group..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing groups..."
+
 $Group = Get-MgGroup -Filter "displayName eq '$AuthPolicyGroupName'" -ErrorAction SilentlyContinue
 if ($Group) {
     try {
@@ -89,9 +91,9 @@ if ($Group) {
                 if ($GroupInRole) {
                     try {
                         Remove-MgDirectoryRoleMemberByRef -DirectoryRoleId $Role.Id -DirectoryObjectId $Group.Id
-                        Write-Host "[+] Removed group from role: $($Role.DisplayName)" -ForegroundColor Green
+                        Write-Host "    [+] Removed group from role: $($Role.DisplayName)" -ForegroundColor Green
                     } catch {
-                        Write-Host "[-] Failed to remove group from role $($Role.DisplayName): $($_.Exception.Message)" -ForegroundColor Red
+                        Write-Host "    [-] Failed to remove group from role $($Role.DisplayName): $($_.Exception.Message)" -ForegroundColor Red
                     }
                 }
             }
@@ -99,12 +101,45 @@ if ($Group) {
         
         # Now delete the group
         Remove-MgGroup -GroupId $Group.Id -Confirm:$false
-        Write-Host "[+] Deleted group: $GroupName" -ForegroundColor Green
+        Write-Host "    [+] Deleted group: $AuthPolicyGroupName" -ForegroundColor Green
     } catch {
-        Write-Host "[-] Failed to delete group: $GroupName - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    [-] Failed to delete group: $AuthPolicyGroupName - $($_.Exception.Message)" -ForegroundColor Red
     }
 } else {
-    Write-Host "[-] Group not found: $GroupName" -ForegroundColor Yellow
+    Write-Host "    [-] Group not found: $AuthPolicyGroupName" -ForegroundColor Yellow
+}
+
+# Cleanup AI Operations Team Group
+Write-Host "`n[*] Removing AI Operations Team group..."
+
+$AIGroup = Get-MgGroup -Filter "displayName eq '$AIAdminGroupName'" -ErrorAction SilentlyContinue
+if ($AIGroup) {
+    try {
+        # remove role assignments if any
+        $DirectoryRoles = Get-MgDirectoryRole -All
+        foreach ($Role in $DirectoryRoles) {
+            $RoleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $Role.Id -All -ErrorAction SilentlyContinue
+            if ($RoleMembers) {
+                $GroupInRole = $RoleMembers | Where-Object { $_.Id -eq $AIGroup.Id }
+                if ($GroupInRole) {
+                    try {
+                        Remove-MgDirectoryRoleMemberByRef -DirectoryRoleId $Role.Id -DirectoryObjectId $AIGroup.Id
+                        Write-Host "    [+] Removed AI group from role: $($Role.DisplayName)" -ForegroundColor Green
+                    } catch {
+                        Write-Host "    [-] Failed to remove AI group from role $($Role.DisplayName): $($_.Exception.Message)" -ForegroundColor Red
+                    }
+                }
+            }
+        }
+        
+        # Now delete the group
+        Remove-MgGroup -GroupId $AIGroup.Id -Confirm:$false
+        Write-Host "    [+] Deleted group: $AIAdminGroupName" -ForegroundColor Green
+    } catch {
+        Write-Host "    [-] Failed to delete group: $AIAdminGroupName - $($_.Exception.Message)" -ForegroundColor Red
+    }
+} else {
+    Write-Host "    [-] Group not found: $AIAdminGroupName" -ForegroundColor Yellow
 }
 
 # Remove user PIM eligibilities
@@ -131,12 +166,12 @@ if ($LowPrivUser) {
                     -Body $removeParams -ContentType "application/json"
                 Write-Host "[+] Removed PIM eligibility for user" -ForegroundColor Green
             } catch {
-                Write-Host "[-] Failed to remove PIM eligibility: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "[-] Failed to remove PIM eligibility: $($_.Exception.Message)" -ForegroundColor Yellow
             }
         }
     } catch {
         # Expected if running without PIM admin permissions
-        Write-Host "[-] Cannot access PIM eligibilities (requires PIM admin permissions)" -ForegroundColor Yellow
+        Write-Host "[-] Cannot access PIM eligibilities" -ForegroundColor Yellow
         Write-Host "    PIM eligibilities will be cleaned up when user is deleted" -ForegroundColor Yellow
     }
 }
@@ -156,7 +191,7 @@ if ($LegacySP -and $DataSyncSP) {
             Write-Host "[+] Removed Legacy SP ownership of DataSync SP" -ForegroundColor Green
         }
     } catch {
-        Write-Host "[-] Failed to remove SP ownership: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[-] Failed to remove SP ownership: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
 
@@ -169,30 +204,30 @@ if ($LegacySP -and $DataSyncApp) {
             Write-Host "[+] Removed Legacy SP ownership of DataSync Application" -ForegroundColor Green
         }
     } catch {
-        Write-Host "[-] Failed to remove Application ownership: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[-] Failed to remove Application ownership: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
 #endregion
 
 # Cleanup Users
-Write-Host "Removing users..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing users..."
 
 foreach ($UserUPN in @($LowPrivUPN, $AdminUPN) + $dummyUserUPNs) {
     $User = Get-MgUser -Filter "userPrincipalName eq '$UserUPN'" -ErrorAction SilentlyContinue
     if ($User) {
         try {
             Remove-MgUser -UserId $User.Id -Confirm:$false
-            Write-Host "[+] Deleted user: $UserUPN" -ForegroundColor Green
+            Write-Host "    [+] Deleted user: $UserUPN" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete user: $UserUPN - $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] User not found: $UserUPN" -ForegroundColor Yellow
+        Write-Host "    [-] User not found: $UserUPN" -ForegroundColor Yellow
     }
 }
 
 # Cleanup SPs and Apps
-Write-Host "Removing service principals and application registrations..." -ForegroundColor Cyan
+Write-Host "`n[*] Removing service principal and application registration..."
 
 foreach ($AppName in @($LegacyAutomationAppName, $DataSyncAppName, $OrgConfigAppName)) {
     $App = Get-MgApplication -Filter "displayName eq '$AppName'" -ErrorAction SilentlyContinue
@@ -203,21 +238,21 @@ foreach ($AppName in @($LegacyAutomationAppName, $DataSyncAppName, $OrgConfigApp
         if ($SP) {
             try {
                 Remove-MgServicePrincipal -ServicePrincipalId $SP.Id -Confirm:$false
-                Write-Host "[+] Deleted service principal: $($SP.DisplayName)" -ForegroundColor Green
+                Write-Host "    [+] Deleted service principal: $($SP.DisplayName)" -ForegroundColor Green
             } catch {
-                Write-Host "[-] Failed to delete service principal: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "    [-] Failed to delete service principal: $($_.Exception.Message)" -ForegroundColor Red
             }
         }
 
         # Delete app registration
         try {
             Remove-MgApplication -ApplicationId $App.Id -Confirm:$false
-            Write-Host "[+] Deleted application: $AppName" -ForegroundColor Green
+            Write-Host "    [+] Deleted application: $AppName" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to delete application: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "    [-] Failed to delete application: $($_.Exception.Message)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[-] Application not found: $AppName" -ForegroundColor Yellow
+        Write-Host "    [-] Application not found: $AppName" -ForegroundColor Yellow
     }
 }
 
@@ -240,7 +275,7 @@ try {
             
             Write-Host "[+] CBA has been disabled" -ForegroundColor Green
         } catch {
-            Write-Host "[-] Failed to disable CBA: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "[-] Failed to disable CBA: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     } else {
         Write-Host "[*] CBA is not enabled" -ForegroundColor Gray
@@ -252,7 +287,7 @@ try {
 # Clean up any malicious root CAs
 Write-Host "Checking for malicious root CAs..." -ForegroundColor Cyan
 Write-Host "Checking for any *EntraGoat* / *Evil* root CAs to avoid deletion of legitimate ones." -ForegroundColor Cyan
-Write-Host "IMPORTANT: if you used a different Subject field please edit this section for proper cleanup or remove it manually " -ForegroundColor Cyan
+Write-Host "`nNote: if you used a different Subject field please edit this section for proper cleanup or remove it manually " -ForegroundColor Cyan
 
 try {
     $configs = Invoke-MgGraphRequest -Method GET `
@@ -311,45 +346,79 @@ try {
         Write-Host "[*] No certificate-based auth configurations found" -ForegroundColor Gray
     }
 } catch {
-    Write-Host "[-] Failed to check/remove certificate authorities: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[-] Failed to check/remove certificate authorities: $($_.Exception.Message)" -ForegroundColor Yellow
     Write-Host "[!] Manual CA cleanup required via Entra admin center" -ForegroundColor Yellow
 }
 
 # Wait until all target objects are truly deleted
-function Wait-ForDeletion {
+function Wait-ForAllDeletions {
     param (
-        [string]$UPN,
-        [string]$AppName,
-        [int]$TimeoutSeconds = 60
+        [array]$ObjectsToCheck,
+        [int]$TimeoutSeconds = 90
     )
+    
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $UserExists = Get-MgUser -Filter "userPrincipalName eq '$UPN'" -ErrorAction SilentlyContinue
-        $AppExists = Get-MgApplication -Filter "displayName eq '$AppName'" -ErrorAction SilentlyContinue
-        $SPExists = $null
-        if ($AppExists) {
-            $SPExists = Get-MgServicePrincipal -Filter "appId eq '$($AppExists.AppId)'" -ErrorAction SilentlyContinue
+        $AllDeleted = $true
+        
+        foreach ($obj in $ObjectsToCheck) {
+            if ($obj.Type -eq "User") {
+                $Exists = Get-MgUser -Filter "userPrincipalName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            } elseif ($obj.Type -eq "Group") {
+                $Exists = Get-MgGroup -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($Exists) {
+                    $AllDeleted = $false
+                    break
+                }
+            } elseif ($obj.Type -eq "Application") {
+                $AppExists = Get-MgApplication -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                $SPExists = Get-MgServicePrincipal -Filter "displayName eq '$($obj.Name)'" -ErrorAction SilentlyContinue
+                if ($AppExists -or $SPExists) {
+                    $AllDeleted = $false
+                    break
+                }
+            }
         }
-        if (-not $UserExists -and -not $AppExists -and -not $SPExists) {
-            Write-Host "[+] Confirmed inexistence of $UPN and $AppName" 
-            return
+        
+        if ($AllDeleted) {
+            Write-Host "    [+] Confirmed inexistence of all requested objects" -ForegroundColor Green
+            return $true
         }
-        Start-Sleep -Seconds 3
+        
+        Write-Verbose "Still waiting for deletion..."
+        Start-Sleep -Seconds 5
     }
-    Write-Host "[-] Warning: Timed out waiting for deletion of $UPN or $AppName." -ForegroundColor Yellow
+    
+    Write-Host "    [-] Warning: Timed out waiting for deletion. Some objects may still exist." -ForegroundColor Yellow
+    return $false
 }
 
-Write-Host "Waiting for all objects to be fully purged..." -ForegroundColor Cyan
-Wait-ForDeletion -UPN $LowPrivUPN -AppName $LegacyAutomationAppName
-Wait-ForDeletion -UPN $AdminUPN -AppName $DataSyncAppName
-Wait-ForDeletion -UPN $AdminUPN -AppName $OrgConfigAppName
+Write-Host "`n[*] Waiting for objects to be fully purged (this can take a moment)..."
 
-Write-Host "`nCleanup process complete." -ForegroundColor Cyan
+$ObjectsToCheck = @()
+$ObjectsToCheck += @{ Type = "User"; Name = $LowPrivUPN }
+$ObjectsToCheck += @{ Type = "User"; Name = $AdminUPN }
+$ObjectsToCheck += @{ Type = "Group"; Name = $AuthPolicyGroupName }
+$ObjectsToCheck += @{ Type = "Group"; Name = $AIAdminGroupName }
+$ObjectsToCheck += @{ Type = "Application"; Name = $LegacyAutomationAppName }
+$ObjectsToCheck += @{ Type = "Application"; Name = $DataSyncAppName }
+$ObjectsToCheck += @{ Type = "Application"; Name = $OrgConfigAppName }
+
+$DeletionComplete = Wait-ForAllDeletions -ObjectsToCheck $ObjectsToCheck
+if ($DeletionComplete) {
+    Write-Host "`n[+] All objects successfully removed from tenant" -ForegroundColor DarkGreen
+} else {
+    Write-Host "`n Some objects may still be processing deletion" -ForegroundColor Yellow
+    Write-Host "   Wait a few minutes before running setup again" -ForegroundColor Yellow
+}
+
+Write-Host "`nCleanup process for Scenario 6 complete." -ForegroundColor White
 Write-Host ""
-Write-Host "[!] Important notes:" -ForegroundColor Yellow
-Write-Host "    - CBA configuration has been checked and disabled if it was enabled" -ForegroundColor White
-Write-Host "    - Certificate authorities have been checked for suspicious entries" -ForegroundColor White
-Write-Host "    - Manually review any remaining certificate authorities for legitimacy" -ForegroundColor White
+Write-Host "[!] Important notes: Manually review any remaining certificate authorities for legitimacy" -ForegroundColor Yellow
 Write-Host ""
 
-Disconnect-MgGraph -ErrorAction SilentlyContinue
+# Disconnect-MgGraph -ErrorAction SilentlyContinue

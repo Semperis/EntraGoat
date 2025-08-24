@@ -39,7 +39,7 @@ $RequiredModules = @(
 )
 $MissingModules = @()
 foreach ($moduleName in $RequiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $moduleName)) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
         $MissingModules += $moduleName
     }
 }
@@ -50,11 +50,14 @@ if ($MissingModules.Count -gt 0) {
     if ($choice -eq 'Y') {
         try {
             Write-Host "Attempting to install $($MissingModules -join ', ') from PowerShell Gallery. This may take a moment..." -ForegroundColor Yellow
-            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop -Verbose:$false
             Write-Verbose "[+] Successfully attempted to install missing modules."
             # Import them after installation
             foreach ($moduleName in $MissingModules) {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "   Imported $moduleName"
             }
         } catch {
@@ -70,9 +73,12 @@ if ($MissingModules.Count -gt 0) {
 } else {
     # Import modules if they are installed but not loaded
     foreach ($moduleName in $RequiredModules) {
-        if (-not (Get-Module -Name $moduleName)) {
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
             try {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "[+] Imported module $moduleName."
             } catch {
                 Write-Host "[-] " -ForegroundColor Red -NoNewline
@@ -257,7 +263,7 @@ Write-Verbose "[*] Setting up users..."
 $LowPrivUPN = "david.martinez@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s1@$TenantDomain"  
 
-# Create (or get) low-privileged user
+# Create or get low-privileged user
 Write-Verbose "    ->  Regular user: $LowPrivUPN"
 $LowPrivUser = New-EntraGoatUser -DisplayName "David Martinez" -UserPrincipalName $LowPrivUPN -MailNickname "david.martinez" -Password $LowPrivPassword -Department "Finance" -JobTitle "Financial Analyst"
 
@@ -466,9 +472,10 @@ $SetupSuccessful = $ownerCheck -and ($roleCheck -or $hasRole)
 if ($VerbosePreference -eq 'Continue') {
     # Verbose output with all details
     Write-Host ""
-    Write-Host "|----------------------------------------------------------------|" -ForegroundColor Green
-    Write-Host "|                 SCENARIO 1 SETUP COMPLETED                     |" -ForegroundColor Green
-    Write-Host "|----------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host "|             SCENARIO 1 SETUP COMPLETED (VERBOSE)             |" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host ""
 
     Write-Host "`nVULNERABILITY DETAILS:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray

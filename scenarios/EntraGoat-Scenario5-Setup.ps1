@@ -16,21 +16,16 @@ param(
 
 # Configuration
 $CustomRoleName = "User Profile Administrator"
-$SupportGroupName = "Tier-1 Support Team"
-$PrivilegedGroupName = "Regional Access Coordinators"
+$SupportGroupName = "HR Support Team"
+$PrivilegedGroupName = "Regional HR Coordinators"
+$KnowledgeGroupName = "Knowledge Management Team"
+$KaizalaGroupName = "Kaizala Operations Team"
 $AUName = "HR Department"
 $Flag = "EntraGoat{Dyn@m1c_AU_P01s0n1ng_FTW!}"
 $SupportPassword = "GoatAccess!123"
 $AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $standardDelay = 5 
 $longReplicationDelay = 15 
-
-Write-Host ""
-Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
-Write-Host "|         ENTRAGOAT SCENARIO 5 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
-Write-Host "|        Department of Escalations - AU Ready for This?        |" -ForegroundColor Cyan
-Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
-Write-Host ""
 
 $HRUsers = @(
     @{ DisplayName = "Jessica Chen"; UPN = "jessica.chen"; Department = "HR"; JobTitle = "Senior Analyst" }
@@ -43,6 +38,13 @@ $RegionalUsers = @(
     @{ DisplayName = "Lisa Park"; UPN = "lisa.park"; Department = "Security"; JobTitle = "Identity Access Manager" }
 )
 
+Write-Host ""
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host "|         ENTRAGOAT SCENARIO 5 - SETUP INITIALIZATION          |" -ForegroundColor Cyan
+Write-Host "|        Department of Escalations - AU Ready for This?        |" -ForegroundColor Cyan
+Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+Write-Host ""
+
 #region Module Check and Import
 Write-Verbose "[*] Checking and importing required Microsoft Graph modules..."
 $RequiredModules = @(
@@ -54,7 +56,7 @@ $RequiredModules = @(
 )
 $MissingModules = @()
 foreach ($moduleName in $RequiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $moduleName)) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
         $MissingModules += $moduleName
     }
 }
@@ -65,10 +67,13 @@ if ($MissingModules.Count -gt 0) {
     if ($choice -eq 'Y') {
         try {
             Write-Host "Attempting to install $($MissingModules -join ', ') from PowerShell Gallery. This may take a moment..." -ForegroundColor Yellow
-            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop -Verbose:$false
             Write-Verbose "[+] Successfully attempted to install missing modules."
             foreach ($moduleName in $MissingModules) {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "   Imported $moduleName"
             }
         } catch {
@@ -83,9 +88,12 @@ if ($MissingModules.Count -gt 0) {
     }
 } else {
     foreach ($moduleName in $RequiredModules) {
-        if (-not (Get-Module -Name $moduleName)) {
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
             try {
-                Import-Module $moduleName -ErrorAction Stop
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
                 Write-Verbose "[+] Imported module $moduleName."
             } catch {
                 Write-Host "[-] " -ForegroundColor Red -NoNewline
@@ -130,69 +138,158 @@ try {
 }
 #endregion
 
+#region Helper Functions
+function New-EntraGoatUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$UserPrincipalName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Password,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Department = "",
+        
+        [Parameter(Mandatory=$false)]
+        [string]$JobTitle = ""
+    )
+    
+    Write-Verbose "   -> $DisplayName`: $UserPrincipalName"
+    $ExistingUser = Get-MgUser -Filter "userPrincipalName eq '$UserPrincipalName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingUser) {
+        $User = $ExistingUser
+        Write-Verbose "      EXISTS (using existing)"
+        # Update password to ensure we know it
+        $passwordProfile = @{
+            Password = $Password
+            ForceChangePasswordNextSignIn = $false
+        }
+        Update-MgUser -UserId $User.Id -PasswordProfile $passwordProfile
+    } else {
+        $UserParams = @{
+            DisplayName = $DisplayName
+            UserPrincipalName = $UserPrincipalName
+            MailNickname = $MailNickname
+            AccountEnabled = $true
+            PasswordProfile = @{
+                ForceChangePasswordNextSignIn = $false
+                Password = $Password
+            }
+        }
+        
+        if ($Department) { $UserParams.Department = $Department }
+        if ($JobTitle) { $UserParams.JobTitle = $JobTitle }
+        
+        $User = New-MgUser @UserParams
+        Write-Verbose "      CREATED"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    return $User
+}
+
+function New-EntraGoatGroup {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$GroupName,
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        [Parameter(Mandatory=$false)]
+        [string]$RoleTemplateId = $null,
+        [Parameter(Mandatory=$false)]
+        [bool]$IsAssignableToRole = $true
+    )
+    
+    Write-Verbose "[*] Creating group: $GroupName"
+    $ExistingGroup = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingGroup) {
+        $Group = $ExistingGroup
+        Write-Verbose "   -> Group exists: $GroupName"
+    } else {
+        $GroupParams = @{
+            DisplayName = $GroupName
+            Description = $Description
+            MailEnabled = $false
+            MailNickname = $MailNickname
+            SecurityEnabled = $true
+            IsAssignableToRole = $IsAssignableToRole
+        }
+        $Group = New-MgGroup @GroupParams
+        Write-Verbose "   -> Group created: $GroupName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Assign role if specified
+    if ($RoleTemplateId) {
+        Write-Verbose "[*] Assigning role to group..."
+        $DirectoryRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$RoleTemplateId'" -ErrorAction SilentlyContinue
+        if (-not $DirectoryRole) {
+            Write-Verbose "   -> Activating role template..."
+            $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $RoleTemplateId
+            $DirectoryRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
+            Start-Sleep -Seconds $standardDelay
+        }
+        
+        $ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRole.Id -All -ErrorAction SilentlyContinue
+        $IsAlreadyAssigned = $false
+        if ($ExistingMembers) {
+            foreach ($member in $ExistingMembers) {
+                if ($member.Id -eq $Group.Id) {
+                    $IsAlreadyAssigned = $true
+                    break
+                }
+            }
+        }
+        
+        if (-not $IsAlreadyAssigned) {
+            try {
+                $RoleMemberParams = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($Group.Id)"
+                }
+                New-MgDirectoryRoleMemberByRef -DirectoryRoleId $DirectoryRole.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
+                Write-Verbose "   -> Role assigned successfully"
+                Start-Sleep -Seconds $longReplicationDelay
+            } catch {
+                if ($_.Exception.Message -like "*already exist*") {
+                    Write-Verbose "   -> Role already assigned"
+                } else {
+                    Write-Verbose "   -> Failed to assign role: $($_.Exception.Message)"
+                }
+            }
+        } else {
+            Write-Verbose "   -> Group already has role"
+        }
+    }
+    
+    return $Group
+}
+#endregion
+
 #region User Creation
 Write-Verbose "[*] Setting up users..."
 $SupportUPN = "sarah.connor@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s5@$TenantDomain"
 
-# Create or get support user
-Write-Verbose "    -> Support user: $SupportUPN"
-$ExistingSupportUser = Get-MgUser -Filter "userPrincipalName eq '$SupportUPN'" -ErrorAction SilentlyContinue
-if ($ExistingSupportUser) {
-    $SupportUser = $ExistingSupportUser
-    Write-Verbose "      EXISTS (using existing)"
-    # Update password to ensure we know it
-    $passwordProfile = @{
-        Password = $SupportPassword
-        ForceChangePasswordNextSignIn = $false
-    }
-    Update-MgUser -UserId $SupportUser.Id -PasswordProfile $passwordProfile
-} else {
-    $SupportUserParams = @{
-        DisplayName = "Sarah Connor"
-        UserPrincipalName = $SupportUPN
-        MailNickname = "sarah.connor"
-        AccountEnabled = $true
-        Department = "IT Support"
-        JobTitle = "Service Desk Analyst"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $SupportPassword
-        }
-    }
-    $SupportUser = New-MgUser @SupportUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
-}
+$SupportUser = New-EntraGoatUser -DisplayName "Sarah Connor" -UserPrincipalName $SupportUPN -MailNickname "sarah.connor" -Password $SupportPassword -Department "HR" -JobTitle "HR Manager"
+$AdminUser = New-EntraGoatUser -DisplayName "EntraGoat Administrator S5" -UserPrincipalName $AdminUPN -MailNickname "entragoat-admin-s5" -Password $AdminPassword -Department "Executive" -JobTitle "System Administrator"
 
-# Create dummy HR users (will be added to AU via dynamic membership)
+# Create dummy HR users (they will be added to the AU via dynamic membership)
 Write-Verbose "    -> Creating HR department users..."
 $HRUserObjects = @()
 foreach ($userInfo in $HRUsers) {
     $userUPN = "$($userInfo.UPN)@$TenantDomain"
-    $existingUser = Get-MgUser -Filter "userPrincipalName eq '$userUPN'" -ErrorAction SilentlyContinue
-    
-    if ($existingUser) {
-        $HRUserObjects += $existingUser
-        Write-Verbose "      $($userInfo.DisplayName) EXISTS"
-    } else {
-        $userParams = @{
-            DisplayName = $userInfo.DisplayName
-            UserPrincipalName = $userUPN
-            MailNickname = $userInfo.UPN
-            AccountEnabled = $true
-            Department = $userInfo.Department
-            JobTitle = $userInfo.JobTitle
-            PasswordProfile = @{
-                ForceChangePasswordNextSignIn = $false
-                Password = "Finance@2025!"
-            }
-        }
-        $newUser = New-MgUser @userParams
-        $HRUserObjects += $newUser
-        Write-Verbose "      $($userInfo.DisplayName) CREATED"
-        Start-Sleep -Seconds $standardDelay
-    }
+    $newUser = New-EntraGoatUser -DisplayName $userInfo.DisplayName -UserPrincipalName $userUPN -MailNickname $userInfo.UPN -Password "HRUsers@2025!" -Department $userInfo.Department -JobTitle $userInfo.JobTitle
+    $HRUserObjects += $newUser
 }
 
 # Create dummy Regional Access users
@@ -200,58 +297,8 @@ Write-Verbose "    -> Creating Regional Access users..."
 $RegionalUserObjects = @()
 foreach ($userInfo in $RegionalUsers) {
     $userUPN = "$($userInfo.UPN)@$TenantDomain"
-    $existingUser = Get-MgUser -Filter "userPrincipalName eq '$userUPN'" -ErrorAction SilentlyContinue
-    
-    if ($existingUser) {
-        $RegionalUserObjects += $existingUser
-        Write-Verbose "      $($userInfo.DisplayName) EXISTS"
-    } else {
-        $userParams = @{
-            DisplayName = $userInfo.DisplayName
-            UserPrincipalName = $userUPN
-            MailNickname = $userInfo.UPN
-            AccountEnabled = $true
-            Department = $userInfo.Department
-            JobTitle = $userInfo.JobTitle
-            PasswordProfile = @{
-                ForceChangePasswordNextSignIn = $false
-                Password = "Regional@2025!"
-            }
-        }
-        $newUser = New-MgUser @userParams
-        $RegionalUserObjects += $newUser
-        Write-Verbose "      $($userInfo.DisplayName) CREATED"
-        Start-Sleep -Seconds $standardDelay
-    }
-}
-
-# Create or get GA user
-Write-Verbose "    -> Global admin user: $AdminUPN"
-$ExistingAdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUPN'" -ErrorAction SilentlyContinue
-if ($ExistingAdminUser) {
-    $AdminUser = $ExistingAdminUser
-    Write-Verbose "      EXISTS (using existing)"
-    $passwordProfile = @{
-        Password = $AdminPassword
-        ForceChangePasswordNextSignIn = $false
-    }
-    Update-MgUser -UserId $AdminUser.Id -PasswordProfile $passwordProfile
-} else {
-    $AdminUserParams = @{
-        DisplayName = "EntraGoat Administrator S5"
-        UserPrincipalName = $AdminUPN
-        MailNickname = "entragoat-admin-s5"
-        AccountEnabled = $true
-        Department = "Executive"
-        JobTitle = "System Administrator"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $AdminPassword
-        }
-    }
-    $AdminUser = New-MgUser @AdminUserParams
-    Write-Verbose "      CREATED"
-    Start-Sleep -Seconds $standardDelay
+    $newUser = New-EntraGoatUser -DisplayName $userInfo.DisplayName -UserPrincipalName $userUPN -MailNickname $userInfo.UPN -Password "Regional@2025!" -Department $userInfo.Department -JobTitle $userInfo.JobTitle
+    $RegionalUserObjects += $newUser
 }
 #endregion
 
@@ -350,30 +397,12 @@ if ($ExistingCustomRole) {
 }
 #endregion
 
-#region Create Basic IT Admins Group
-Write-Verbose "[*] Creating Basic IT Admins group..."
-$ExistingGroup = Get-MgGroup -Filter "displayName eq '$SupportGroupName'" -ErrorAction SilentlyContinue
-
-if ($ExistingGroup) {
-    $BasicITGroup = $ExistingGroup
-    Write-Verbose "    -> Group exists: $SupportGroupName"
-} else {
-    $GroupParams = @{
-        DisplayName = $SupportGroupName
-        Description = "Service desk team providing basic user and device support"
-        MailEnabled = $false
-        MailNickname = "it-service-desk"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true
-    }
-    $SupportGroup = New-MgGroup @GroupParams
-    Write-Verbose "    -> Group created: $SupportGroupName"
-    Start-Sleep -Seconds $standardDelay
-}
+#region Create Tier-1 Support Team Group
+Write-Verbose "[*] Creating Tier-1 Support Team group..."
+$SupportGroup = New-EntraGoatGroup -GroupName $SupportGroupName -Description "HR support team with custom user profile update permissions" -MailNickname "hr-support-desk"
 
 # Assign custom role to the support group
-Write-Verbose "[*] Assigning custom role to Basic IT Admins group..."
-# $ExistingRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignment -Filter "roleDefinitionId eq '$($CustomRole.Id)'" -ExpandProperty "principal" -ErrorAction SilentlyContinue
+Write-Verbose "[*] Assigning custom role to HR Support Team group..."
 $ExistingRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($SupportGroup.Id)' and roleDefinitionId eq '$($CustomRole.Id)'" -ErrorAction SilentlyContinue
 
 if (-not $ExistingRoleAssignments) {
@@ -398,7 +427,7 @@ if (-not $ExistingRoleAssignments) {
 }
 
 # Make Sarah eligible member of support group
-Write-Verbose "[!] CREATING VULNERABILITY 1: Making support user eligible member of IT Service Desk group..."
+Write-Verbose "[!] CREATING VULNERABILITY 1: Making Sarah eligible member of HR Support Team group..."
 $eligibleMemberParams = @{
     accessId          = "member"
     principalId       = $SupportUser.Id
@@ -411,7 +440,7 @@ $eligibleMemberParams = @{
             duration = "P365D"  
         }
     }
-    justification     = "Service desk support responsibilities"
+    justification     = "HR support responsibilities"
 }
 
 try {
@@ -427,24 +456,7 @@ try {
 
 #region Create PIM Group for AU-Scoped Role
 Write-Verbose "[*] Creating PIM-eligible group..."
-$ExistingPrivGroup = Get-MgGroup -Filter "displayName eq '$PrivilegedGroupName'" -ErrorAction SilentlyContinue
-
-if ($ExistingPrivGroup) {
-    $PrivilegedGroup = $ExistingPrivGroup
-    Write-Verbose "    -> Group exists: $PrivilegedGroupName"
-} else {
-    $PrivGroupParams = @{
-        DisplayName = $PrivilegedGroupName
-        Description = "Regional access coordination team for cross-departmental authentication management"
-        MailEnabled = $false
-        MailNickname = "regional-identity-mgrs"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true
-    }
-    $PrivilegedGroup = New-MgGroup @PrivGroupParams
-    Write-Verbose "    -> Group created: $PrivilegedGroupName"
-    Start-Sleep -Seconds $standardDelay
-}
+$PrivilegedGroup = New-EntraGoatGroup -GroupName $PrivilegedGroupName -Description "Regional HR coordination team for departmental authentication management" -MailNickname "regional-hr-mgrs"
 
 Write-Verbose "[*] Adding Regional Access users to PIM group..."
 foreach ($user in $RegionalUserObjects) {
@@ -470,8 +482,8 @@ foreach ($user in $RegionalUserObjects) {
     }
 }
 
-# Make support user eligible owner of the PIM group 
-Write-Verbose "[!] Setting support user as eligible owner of PIM group..."
+# Make Sarah eligible owner of the PIM group 
+Write-Verbose "[!] Setting Sarah as eligible owner of PIM group..."
 
 $eligibleOwnerParams = @{
     accessId          = "owner"
@@ -485,18 +497,84 @@ $eligibleOwnerParams = @{
             duration = "P365D"  
         }
     }
-    justification     = "Regional access coordination administrative privileges"
+    justification     = "Regional HR coordination administrative privileges"
 }
 
 try {
     $ownershipResponse = Invoke-MgGraphRequest -Method POST `
         -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/eligibilityScheduleRequests" `
         -Body $eligibleOwnerParams -ContentType "application/json"
-    Write-Verbose "    -> Eligible ownership granted (vulnerability created)"
+    Write-Verbose "    -> Eligible ownership granted"
     Start-Sleep -Seconds $standardDelay
 } catch {
     Write-Verbose "    -> Failed to create eligible ownership: $($_.Exception.Message)"
 }
+
+# 2 more eligible members of PIM group to hide a bit the attack chain and make it look like a real PIM setup
+
+#region Create Knowledge Management Team Group
+Write-Verbose "[*] Creating Knowledge Management Team group..."
+$KnowledgeGroup = New-EntraGoatGroup -GroupName $KnowledgeGroupName -Description "Team responsible for managing organizational knowledge and documentation" -MailNickname "knowledge-mgmt-team" -RoleTemplateId "b5a8dcf3-09d5-43a9-a639-8e29ef291470"
+
+# Make Sarah eligible member of Knowledge Management group
+Write-Verbose "Making Sarah eligible member of Knowledge Management group..."
+$eligibleKnowledgeMemberParams = @{
+    accessId          = "member"
+    principalId       = $SupportUser.Id
+    groupId           = $KnowledgeGroup.Id
+    action            = "adminAssign"
+    scheduleInfo      = @{
+        startDateTime = (Get-Date).ToUniversalTime().ToString("o")
+        expiration    = @{ 
+            type = "afterDuration"
+            duration = "P365D"  
+        }
+    }
+    justification     = "Knowledge management support responsibilities"
+}
+
+try {
+    $knowledgeMembershipResponse = Invoke-MgGraphRequest -Method POST `
+        -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/eligibilityScheduleRequests" `
+        -Body $eligibleKnowledgeMemberParams -ContentType "application/json"
+    Write-Verbose "    -> Eligible Knowledge Management membership granted"
+    Start-Sleep -Seconds $standardDelay
+} catch {
+    Write-Verbose "    -> Failed to create eligible Knowledge Management membership: $($_.Exception.Message)"
+}
+#endregion
+
+#region Create Kaizala Operations Team Group
+Write-Verbose "[*] Creating Kaizala Operations Team group..."
+$KaizalaGroup = New-EntraGoatGroup -GroupName $KaizalaGroupName -Description "Team responsible for managing Kaizala operations and communications" -MailNickname "kaizala-ops-team" -RoleTemplateId "74ef975b-6605-40af-a5d2-b9539d836353"
+
+# Make Sarah eligible member of Kaizala Operations group
+Write-Verbose "[!] Making Sarah eligible member of Kaizala Operations group..."
+$eligibleKaizalaMemberParams = @{
+    accessId          = "member"
+    principalId       = $SupportUser.Id
+    groupId           = $KaizalaGroup.Id
+    action            = "adminAssign"
+    scheduleInfo      = @{
+        startDateTime = (Get-Date).ToUniversalTime().ToString("o")
+        expiration    = @{ 
+            type = "afterDuration"
+            duration = "P365D"  
+        }
+    }
+    justification     = "Kaizala operations support responsibilities"
+}
+
+try {
+    $kaizalaMembershipResponse = Invoke-MgGraphRequest -Method POST `
+        -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/eligibilityScheduleRequests" `
+        -Body $eligibleKaizalaMemberParams -ContentType "application/json"
+    Write-Verbose "    -> Eligible Kaizala Operations membership granted"
+    Start-Sleep -Seconds $standardDelay
+} catch {
+    Write-Verbose "    -> Failed to create eligible Kaizala Operations membership: $($_.Exception.Message)"
+}
+#endregion
 
 #region Create Administrative Unit with Dynamic Membership
 Write-Verbose "[*] Creating Administrative Unit: $AUName"
@@ -560,31 +638,63 @@ try {
 
 $SetupSuccessful = $true # Assume success unless an exit occurred
 
+# Helper to print the minimal output block consistently
+function Show-MinimalOutput {
+    param(
+        [string]$SupportUPN,
+        [string]$SupportPassword,
+        [string]$AdminUPN
+    )
+
+    Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Username: " -ForegroundColor White -NoNewline
+    Write-Host $SupportUPN -ForegroundColor Cyan
+    Write-Host "  Password: " -ForegroundColor White -NoNewline
+    Write-Host $SupportPassword -ForegroundColor Cyan
+
+    Write-Host "`nTARGET:" -ForegroundColor Magenta
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Username: " -ForegroundColor White -NoNewline
+    Write-Host $AdminUPN -ForegroundColor Cyan
+
+    Write-Host "  Flag Location: " -ForegroundColor White -NoNewline
+    Write-Host "extensionAttribute1" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Hint: Administrative Units create boundaries... until you're on the inside." -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 #region Output Summary
 if ($VerbosePreference -eq 'Continue') {
     Write-Host ""
-    Write-Host "----------------------------------------------------------------" -ForegroundColor Green
-    Write-Host "              SCENARIO 5 SETUP COMPLETED                        " -ForegroundColor Green
-    Write-Host "----------------------------------------------------------------" -ForegroundColor Green
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host "|             SCENARIO 5 SETUP COMPLETED (VERBOSE)             |" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host ""
 
     Write-Host "`nVULNERABILITY CHAIN:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
-    Write-Host "   -  Support user has eligible membership in IT Service Desk group" -ForegroundColor White
-    Write-Host "   -  IT Service Desk has User Profile Administrator role (update attributes)" -ForegroundColor White
-    Write-Host "   -  Support user has eligible ownership of Regional Identity Managers group" -ForegroundColor White
-    Write-Host "   -  Regional Identity Managers has AU-scoped Privileged Auth Admin role" -ForegroundColor White
-    Write-Host "   -  Finance AU has dynamic rule: (user.department -eq 'Finance')" -ForegroundColor White
-    Write-Host "   -  Attack: Activate roles -> Modify admin's department -> Reset password" -ForegroundColor White
+    Write-Host "   -  Sarah has eligible membership in HR Support Team group" -ForegroundColor White
+    Write-Host "   -  HR Support Team has User Profile Administrator cutome role that allows memebrs to update attributes for all users" -ForegroundColor White
+    Write-Host "   -  Sarah also has eligible ownership of Regional HR Coordinators group" -ForegroundColor White
+    Write-Host "   -  Regional HR Coordinators has AU-scoped Privileged Authentication Administrator role" -ForegroundColor White
+    Write-Host "   -  HR AU has dynamic rule: (user.department -eq 'HR')" -ForegroundColor White
+    Write-Host "   -  Attack: Activate eligible assignments -> Modify admin's department -> Reset password" -ForegroundColor White
 
     Write-Host "`nGROUPS:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
     Write-Host "  Support Group: $SupportGroupName (ID: $($SupportGroup.Id))" -ForegroundColor Cyan
     Write-Host "  Privileged Group: $PrivilegedGroupName (ID: $($PrivilegedGroup.Id))" -ForegroundColor Cyan
+    Write-Host "  Knowledge Group: $KnowledgeGroupName (ID: $($KnowledgeGroup.Id))" -ForegroundColor Cyan
+    Write-Host "  Kaizala Group: $KaizalaGroupName (ID: $($KaizalaGroup.Id))" -ForegroundColor Cyan
 
     Write-Host "`nADMINISTRATIVE UNIT:" -ForegroundColor Yellow
     Write-Host "----------------------------" -ForegroundColor DarkGray
-    Write-Host "  AU: $AUName (ID: $($financeAU.Id))" -ForegroundColor Cyan
-    Write-Host "  Dynamic Rule: (user.department -eq 'Finance')" -ForegroundColor Cyan
+    Write-Host "  AU: $AUName (ID: $($hrAU.Id))" -ForegroundColor Cyan
+    Write-Host "  Dynamic Rule: (user.department -eq 'HR')" -ForegroundColor Cyan
     Write-Host "  Scoped Role: Privileged Authentication Administrator" -ForegroundColor Cyan
 
     Write-Host "`nFLAG: " -ForegroundColor Green -NoNewline
@@ -592,6 +702,7 @@ if ($VerbosePreference -eq 'Continue') {
 
     Write-Host "`n=====================================================" -ForegroundColor DarkGray
     Write-Host ""
+    Show-MinimalOutput -SupportUPN $SupportUPN -SupportPassword $SupportPassword -AdminUPN $AdminUPN
 } else {
     # Minimal output for CTF players
     Write-Host ""
@@ -599,25 +710,7 @@ if ($VerbosePreference -eq 'Continue') {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
         Write-Host "Scenario 5 setup completed successfully" -ForegroundColor White
         Write-Host ""
-        Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
-        Write-Host "----------------------------" -ForegroundColor DarkGray
-        Write-Host "  Username: " -ForegroundColor White -NoNewline
-        Write-Host "$SupportUPN" -ForegroundColor Cyan
-        Write-Host "  Password: " -ForegroundColor White -NoNewline
-        Write-Host "$SupportPassword" -ForegroundColor Cyan
-
-        Write-Host "`nTARGET:" -ForegroundColor Magenta
-        Write-Host "----------------------------" -ForegroundColor DarkGray
-        Write-Host "  Username: " -ForegroundColor White -NoNewline
-        Write-Host "$AdminUPN" -ForegroundColor Cyan
-
-        Write-Host "  Flag Location: " -ForegroundColor White -NoNewline
-        Write-Host "extensionAttribute1" -ForegroundColor Cyan
-        Write-Host ""
-        
-        Write-Host "Hint: Administrative Units create boundaries... until you're on the inside." -ForegroundColor DarkGray
+        Show-MinimalOutput -SupportUPN $SupportUPN -SupportPassword $SupportPassword -AdminUPN $AdminUPN
 
     } else {
         Write-Host "[-] " -ForegroundColor Red -NoNewline
