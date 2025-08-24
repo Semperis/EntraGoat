@@ -53,15 +53,16 @@ Write-Host ""
 Write-Verbose "[*] Checking required Microsoft Graph modules..."
 $RequiredCleanupModules = @("Microsoft.Graph.Authentication", "Microsoft.Graph.Applications", "Microsoft.Graph.Users", "Microsoft.Graph.Identity.DirectoryManagement")
 foreach ($moduleName in $RequiredCleanupModules) {
-    if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue)) {
-        try {
-            Import-Module $moduleName -ErrorAction Stop
-            Write-Verbose "[+] Imported module $moduleName."
-        } catch {
-            Write-Host "[-] " -ForegroundColor Red -NoNewline
-            Write-Host "Failed to import module $moduleName. Please ensure Microsoft Graph SDK is installed. Error: $($_.Exception.Message)" -ForegroundColor White
-            exit 1
+    try {
+        Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+            throw "Failed to import $moduleName"
         }
+        Write-Verbose "[+] Imported module $moduleName."
+    } catch {
+        Write-Host "[-] " -ForegroundColor Red -NoNewline
+        Write-Host "Failed to import module $moduleName. Please ensure Microsoft Graph SDK is installed. Error: $($_.Exception.Message)" -ForegroundColor White
+        exit 1
     }
 }
 #endregion
@@ -167,7 +168,7 @@ if ($TargetSP) {
         Remove-MgServicePrincipal -ServicePrincipalId $TargetSP.Id -Confirm:$false
         Write-Host "    [+] Deleted service principal: $TargetAppName" -ForegroundColor Green
     } catch {
-        Write-Host "    [-] Failed to delete service principal: $TargetAppName - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host '    [-] Failed to delete service principal: $TargetAppName - $($_.Exception.Message)' -ForegroundColor Red
     }
 } else {
     Write-Host "    [-] Service principal not found: $TargetAppName" -ForegroundColor Yellow

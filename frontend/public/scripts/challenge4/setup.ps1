@@ -16,13 +16,13 @@ param(
 
 # Configuration
 $AppAdminGroupName = "Application Operations Team"  
-$PrivAuthGroupName = "Authentication Management Team"   
+$PrivAuthGroupName = "Global Infrastructure Team"   
 $TargetAppName = "Infrastructure Monitoring Tool"   
 $Flag = "EntraGoat{PIM_Gr0up_Pr1v_Esc@l@t10n_2025!}"
 $AdminPassword = "ComplexAdminP@ssw0rd#2025!"
 $LowPrivPassword = "GoatAccess!123"
-$DelayShort = 5
-$DelayLong = 15
+$standardDelay = 5 # Seconds
+$longReplicationDelay = 15
 
 Write-Host ""
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
@@ -31,69 +31,79 @@ Write-Host "|                    I (Eligibly) Own That                     |" -F
 Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
 Write-Host ""
 
-#region Module Verification and Import
-Write-Verbose "[*] Verifying and importing required Microsoft Graph modules..."
+#region Module Check and Import
+Write-Verbose "[*] Checking and importing required Microsoft Graph modules..."
 $RequiredModules = @(
     "Microsoft.Graph.Authentication",
-    "Microsoft.Graph.Applications", 
+    "Microsoft.Graph.Applications",
     "Microsoft.Graph.Users",
     "Microsoft.Graph.Identity.DirectoryManagement",
     "Microsoft.Graph.Groups",
     "Microsoft.Graph.Identity.Governance"
 )
-
 $MissingModules = @()
-foreach ($module in $RequiredModules) {
-    if (-not (Get-Module -ListAvailable -Name $module)) {
-        $MissingModules += $module
+foreach ($moduleName in $RequiredModules) {
+    if (-not (Get-Module -ListAvailable -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+        $MissingModules += $moduleName
     }
 }
 
 if ($MissingModules.Count -gt 0) {
-    Write-Warning "Missing required modules: $($MissingModules -join ', ')"
-    $installChoice = Read-Host "Install missing modules from PowerShell Gallery? (Y/N)"
-    if ($installChoice -eq 'Y') {
+    Write-Warning "The following required modules are not installed: $($MissingModules -join ', ')."
+    $choice = Read-Host "Do you want to attempt to install them from PowerShell Gallery? (Y/N)"
+    if ($choice -eq 'Y') {
         try {
-            Write-Host "Installing modules: $($MissingModules -join ', ')..." -ForegroundColor Yellow
-            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            Write-Verbose "[+] Module installation completed"
-            foreach ($module in $MissingModules) {
-                Import-Module $module -ErrorAction Stop
-                Write-Verbose "   ->  Imported $module"
+            Write-Host "Attempting to install $($MissingModules -join ', ') from PowerShell Gallery. This may take a moment..." -ForegroundColor Yellow
+            Install-Module -Name $MissingModules -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop -Verbose:$false
+            Write-Verbose "[+] Successfully attempted to install missing modules."
+            # Import them after installation
+            foreach ($moduleName in $MissingModules) {
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
+                Write-Verbose "   Imported $moduleName"
             }
         } catch {
-            Write-Host "[-] Module installation failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "[-] " -ForegroundColor Red -NoNewline
+            Write-Host "Failed to automatically install or import modules: $($MissingModules -join ', '). Please install them manually (e.g., Install-Module -Name Microsoft.Graph -Scope CurrentUser) and re-run the script. Error: $($_.Exception.Message)"
             exit 1
         }
     } else {
-        Write-Host "[-] Required modules missing. Please install and re-run." -ForegroundColor Red
+        Write-Host "[-] " -ForegroundColor Red -NoNewline
+        Write-Host "Required modules are missing. Please install them and re-run the script." -ForegroundColor White
         exit 1
     }
 } else {
-    foreach ($module in $RequiredModules) {
-        if (-not (Get-Module -Name $module)) {
+    # Import modules if they are installed but not loaded
+    foreach ($moduleName in $RequiredModules) {
+        if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
             try {
-                Import-Module $module -ErrorAction Stop
-                Write-Verbose "[+] Imported $module"
+                Import-Module $moduleName -ErrorAction SilentlyContinue -Verbose:$false
+                if (-not (Get-Module -Name $moduleName -ErrorAction SilentlyContinue -Verbose:$false)) {
+                    throw "Failed to import $moduleName"
+                }
+                Write-Verbose "[+] Imported module $moduleName."
             } catch {
-                Write-Host "[-] Failed to import $module`: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "[-] " -ForegroundColor Red -NoNewline
+                Write-Host "Failed to import module $moduleName. Error: $($_.Exception.Message)"
                 exit 1
             }
         } else {
-            Write-Verbose "[*] $module already loaded"
+             Write-Verbose "[*] Module $moduleName is already loaded."
         }
     }
 }
-Write-Verbose "[+] All required modules are available"
-#endregion
-
-Write-Verbose "[*] Establishing Microsoft Graph connection..."
+Write-Verbose "[+] All required modules appear to be present and loaded."
+#endregion Module Check and Import
 
 #region Authentication
-$GraphScopes = @(
+Write-Verbose "[*] Connecting to Microsoft Graph..."
+
+$RequiredScopes = @(
     "Application.ReadWrite.All",
     "AppRoleAssignment.ReadWrite.All",
-    "User.ReadWrite.All", 
+    "User.ReadWrite.All",
     "Directory.ReadWrite.All",
     "RoleManagement.ReadWrite.Directory",
     "Group.ReadWrite.All",
@@ -103,39 +113,234 @@ $GraphScopes = @(
     "PrivilegedAccess.ReadWrite.AzureADGroup"
 )
 
-# Try connection with all scopes
 try {
     if ($TenantId) {
-        Connect-MgGraph -Scopes $GraphScopes -TenantId $TenantId -NoWelcome -ErrorAction Stop
+        Connect-MgGraph -Scopes $RequiredScopes -TenantId $TenantId -NoWelcome
     } else {
-        Connect-MgGraph -Scopes $GraphScopes -NoWelcome -ErrorAction Stop
+        Connect-MgGraph -Scopes $RequiredScopes -NoWelcome
     }
-    
-    # $Context = Get-MgContext -ErrorAction Stop
-    $OrgInfo = Get-MgOrganization -ErrorAction Stop
-    
-    $TenantDomain = ($OrgInfo.VerifiedDomains | Where-Object IsDefault).Name
-    $CurrentTenantId = $OrgInfo.Id
-    Write-Verbose "[+] Connected to tenant: $TenantDomain ($CurrentTenantId)"
-    Write-Verbose "    ->  Connected with $($GraphScopes.Count) scopes"
-    
+    # $Context = Get-MgContext 
+    $Organization = Get-MgOrganization
+    $TenantDomain = ($Organization.VerifiedDomains | Where-Object IsDefault).Name
+
+    Write-Verbose "[+] Connected to tenant: $TenantDomain"
 } catch {
-    Write-Host "[-] Microsoft Graph connection failed: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
-    Write-Host " Check your internet connection" -ForegroundColor Yellow
-    Write-Host " Try running Connect-MgGraph manually first" -ForegroundColor Yellow
-    Write-Host " Ensure you have sufficient permissions" -ForegroundColor Yellow
-    Write-Host " Try running as Administrator" -ForegroundColor Yellow
+    Write-Host "[-] " -ForegroundColor Red -NoNewline
+    Write-Host "Failed to connect: $($_.Exception.Message)" 
     exit 1
 }
+#endregion
 
-# Verify we have the required scopes
-$CurrentScopes = (Get-MgContext).Scopes
-$HasPIMScopes = $CurrentScopes -contains "PrivilegedAccess.ReadWrite.AzureADGroup"
+#region Helper Functions
+function New-EntraGoatUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$UserPrincipalName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Password,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$Department = "",
+        
+        [Parameter(Mandatory=$false)]
+        [string]$JobTitle = ""
+    )
+    
+    Write-Verbose "   -> $DisplayName`: $UserPrincipalName"
+    $ExistingUser = Get-MgUser -Filter "userPrincipalName eq '$UserPrincipalName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingUser) {
+        $User = $ExistingUser
+        Write-Verbose "      EXISTS (using existing)"
+        # Update password to ensure we know it
+        $passwordProfile = @{
+            Password = $Password
+            ForceChangePasswordNextSignIn = $false
+        }
+        Update-MgUser -UserId $User.Id -PasswordProfile $passwordProfile
+    } else {
+        $UserParams = @{
+            DisplayName = $DisplayName
+            UserPrincipalName = $UserPrincipalName
+            MailNickname = $MailNickname
+            AccountEnabled = $true
+            PasswordProfile = @{
+                ForceChangePasswordNextSignIn = $false
+                Password = $Password
+            }
+        }
+        
+        if ($Department) { $UserParams.Department = $Department }
+        if ($JobTitle) { $UserParams.JobTitle = $JobTitle }
+        
+        $User = New-MgUser @UserParams
+        Write-Verbose "      CREATED"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    return $User
+}
 
-if (-not $HasPIMScopes) {
-    Write-Warning "PIM group scopes not available - some PIM features may not work"
-    Write-Verbose "    ->  Current scopes: $(($CurrentScopes | Sort-Object) -join ', ')"
+function New-EntraGoatApplication {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DisplayName,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$SignInAudience = "AzureADMyOrg",
+        
+        [Parameter(Mandatory=$false)]
+        [array]$RedirectUris = @(),
+        
+        [Parameter(Mandatory=$false)]
+        [array]$Tags = @("WindowsAzureActiveDirectoryIntegratedApp")
+    )
+    
+    Write-Verbose "[*] Creating application: $DisplayName"
+    $ExistingApp = Get-MgApplication -Filter "displayName eq '$DisplayName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingApp) {
+        $App = $ExistingApp
+        Write-Verbose "   -> Application exists: $DisplayName"
+    } else {
+        $AppParams = @{
+            DisplayName = $DisplayName
+            SignInAudience = $SignInAudience
+            Description = $Description
+        }
+        if ($RedirectUris) {
+            $AppParams.Web = @{
+                RedirectUris = $RedirectUris
+            }
+        }
+        $App = New-MgApplication @AppParams
+        Write-Verbose "   -> Application created: $DisplayName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Get App ID
+    $AppId = $App.AppId
+    if ($AppId -is [array]) { $AppId = $AppId[0] }
+    $AppId = $AppId.ToString()
+    
+    # Create service principal
+    Write-Verbose "[*] Creating service principal for $DisplayName..."
+    $ExistingSP = Get-MgServicePrincipal -Filter "appId eq '$AppId'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingSP) {
+        $SP = $ExistingSP
+        Write-Verbose "   -> Service principal exists"
+        if ($Tags) {
+            Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags -ErrorAction SilentlyContinue
+            Write-Verbose "   -> Updated tags"
+        }
+    } else {
+        $SPParams = @{
+            AppId = $AppId
+            DisplayName = $DisplayName
+        }
+        $SP = New-MgServicePrincipal @SPParams
+        Write-Verbose "   -> Service principal created"
+        Start-Sleep -Seconds $standardDelay
+        if ($Tags) {
+            Update-MgServicePrincipal -ServicePrincipalId $SP.Id -Tags $Tags
+        }
+    }
+    
+    return @{
+        Application = $App
+        ServicePrincipal = $SP
+        AppId = $AppId
+    }
+}
+
+function New-EntraGoatGroup {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$GroupName,
+        [Parameter(Mandatory=$true)]
+        [string]$Description,
+        [Parameter(Mandatory=$true)]
+        [string]$MailNickname,
+        [Parameter(Mandatory=$false)]
+        [string]$RoleTemplateId = $null,
+        [Parameter(Mandatory=$false)]
+        [bool]$IsAssignableToRole = $true
+    )
+    
+    Write-Verbose "[*] Creating group: $GroupName"
+    $ExistingGroup = Get-MgGroup -Filter "displayName eq '$GroupName'" -ErrorAction SilentlyContinue
+    
+    if ($ExistingGroup) {
+        $Group = $ExistingGroup
+        Write-Verbose "   -> Group exists: $GroupName"
+    } else {
+        $GroupParams = @{
+            DisplayName = $GroupName
+            Description = $Description
+            MailEnabled = $false
+            MailNickname = $MailNickname
+            SecurityEnabled = $true
+            IsAssignableToRole = $IsAssignableToRole
+        }
+        $Group = New-MgGroup @GroupParams
+        Write-Verbose "   -> Group created: $GroupName"
+        Start-Sleep -Seconds $standardDelay
+    }
+    
+    # Assign role if specified
+    if ($RoleTemplateId) {
+        Write-Verbose "[*] Assigning role to group..."
+        $DirectoryRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$RoleTemplateId'" -ErrorAction SilentlyContinue
+        if (-not $DirectoryRole) {
+            Write-Verbose "   -> Activating role template..."
+            $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $RoleTemplateId
+            $DirectoryRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
+            Start-Sleep -Seconds $standardDelay
+        }
+        
+        $ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRole.Id -All -ErrorAction SilentlyContinue
+        $IsAlreadyAssigned = $false
+        if ($ExistingMembers) {
+            foreach ($member in $ExistingMembers) {
+                if ($member.Id -eq $Group.Id) {
+                    $IsAlreadyAssigned = $true
+                    break
+                }
+            }
+        }
+        
+        if (-not $IsAlreadyAssigned) {
+            try {
+                $RoleMemberParams = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($Group.Id)"
+                }
+                New-MgDirectoryRoleMemberByRef -DirectoryRoleId $DirectoryRole.Id -BodyParameter $RoleMemberParams -ErrorAction Stop
+                Write-Verbose "   -> Role assigned successfully"
+                Start-Sleep -Seconds $longReplicationDelay
+            } catch {
+                if ($_.Exception.Message -like "*already exist*") {
+                    Write-Verbose "   -> Role already assigned"
+                } else {
+                    Write-Verbose "   -> Failed to assign role: $($_.Exception.Message)"
+                }
+            }
+        } else {
+            Write-Verbose "   -> Group already has role"
+        }
+    }
+    
+    return $Group
 }
 #endregion
 
@@ -144,73 +349,9 @@ Write-Verbose "[*] Creating user accounts..."
 $LowPrivUPN = "woody.chen@$TenantDomain"
 $AdminUPN = "EntraGoat-admin-s4@$TenantDomain"
 
-# Create or get low-privileged user
-Write-Verbose "    ->  Creating low-privilege user: $LowPrivUPN"
-$ExistingLowPrivUser = Get-MgUser -Filter "userPrincipalName eq '$LowPrivUPN'" -ErrorAction SilentlyContinue
-if ($ExistingLowPrivUser) {
-    $LowPrivUser = $ExistingLowPrivUser
-    Write-Verbose "      User exists, updating password"
-    try {
-        $passwordUpdate = @{
-            Password = $LowPrivPassword
-            ForceChangePasswordNextSignIn = $false
-        }
-        Update-MgUser -UserId $LowPrivUser.Id -PasswordProfile $passwordUpdate -ErrorAction Stop
-        Write-Verbose "      Password updated successfully"
-    } catch {
-        Write-Verbose "      Password update failed (continuing): $($_.Exception.Message)"
-    }
-} else {
-    $LowPrivUserParams = @{
-        DisplayName = "Woody"
-        UserPrincipalName = $LowPrivUPN
-        MailNickname = "woody.chen"
-        AccountEnabled = $true
-        Department = "IT Support"
-        JobTitle = "IT Support Specialist"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $LowPrivPassword
-        }
-    }
-    try {
-        $LowPrivUser = New-MgUser @LowPrivUserParams -ErrorAction Stop
-        Write-Verbose "User created successfully"
-        Start-Sleep -Seconds $DelayShort
-    } catch {
-        Write-Host "[-] Failed to create low-privilege user: $($_.Exception.Message)" -ForegroundColor Red
-        exit 1
-    }
-}
-
-# Create admin target user
-Write-Verbose "Creating admin target user: $AdminUPN"
-$ExistingAdminUser = Get-MgUser -Filter "userPrincipalName eq '$AdminUPN'" -ErrorAction SilentlyContinue
-if ($ExistingAdminUser) {
-    $AdminUser = $ExistingAdminUser
-    Write-Verbose "User exists, updating password"
-    $passwordUpdate = @{
-        Password = $AdminPassword
-        ForceChangePasswordNextSignIn = $false
-    }
-    Update-MgUser -UserId $AdminUser.Id -PasswordProfile $passwordUpdate
-} else {
-    $AdminUserParams = @{
-        DisplayName = "EntraGoat Administrator S4"
-        UserPrincipalName = $AdminUPN
-        MailNickname = "entragoat-admin-s4"
-        AccountEnabled = $true
-        Department = "IT Administration"
-        JobTitle = "Global Administrator"
-        PasswordProfile = @{
-            ForceChangePasswordNextSignIn = $false
-            Password = $AdminPassword
-        }
-    }
-    $AdminUser = New-MgUser @AdminUserParams
-    Write-Verbose "User created successfully"
-    Start-Sleep -Seconds $DelayShort
-}
+# Create users using helper function
+$LowPrivUser = New-EntraGoatUser -DisplayName "Woody" -UserPrincipalName $LowPrivUPN -MailNickname "woody.chen" -Password $LowPrivPassword -Department "IT Support" -JobTitle "IT Support Specialist"
+$AdminUser = New-EntraGoatUser -DisplayName "EntraGoat Administrator S4" -UserPrincipalName $AdminUPN -MailNickname "entragoat-admin-s4" -Password $AdminPassword -Department "IT Administration" -JobTitle "Global Administrator"
 #endregion
 
 #region Flag Storage
@@ -237,7 +378,7 @@ if (-not $GlobalAdminRole) {
     Write-Verbose "Activating Global Administrator role template"
     $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $GlobalAdminRoleTemplateId
     $GlobalAdminRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
-    Start-Sleep -Seconds $DelayShort
+    Start-Sleep -Seconds $standardDelay
 }
 
 $ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $GlobalAdminRole.Id -All -ErrorAction SilentlyContinue
@@ -257,12 +398,12 @@ if (-not $IsGlobalAdmin) {
         $RoleMemberRef = @{ "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($AdminUser.Id)" }
         New-MgDirectoryRoleMemberByRef -DirectoryRoleId $GlobalAdminRole.Id -BodyParameter $RoleMemberRef -ErrorAction Stop
         Write-Verbose "Global Administrator role assigned"
-        Start-Sleep -Seconds $DelayLong
+        Start-Sleep -Seconds $longReplicationDelay
     } catch {
         if ($_.Exception.Message -like "*already exist*") {
             Write-Verbose "Role already assigned"
         } else {
-            Write-Host "[-] Global Administrator assignment failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "[-] Global Administrator assignment failed: $($_.Exception.Message)" 
         }
     }
 } else {
@@ -272,45 +413,7 @@ if (-not $IsGlobalAdmin) {
 
 #region Application Administrator Group Creation
 Write-Verbose "[*] Creating Application Administrator group..."
-$ExistingAppGroup = Get-MgGroup -Filter "displayName eq '$AppAdminGroupName'" -ErrorAction SilentlyContinue
-
-if ($ExistingAppGroup) {
-    $AppAdminGroup = $ExistingAppGroup
-    Write-Verbose "    ->  Group exists: $AppAdminGroupName"
-} else {
-    $AppGroupParams = @{
-        DisplayName = $AppAdminGroupName
-        Description = "Group with eligible Application Administrator role for testing"
-        MailEnabled = $false
-        MailNickname = "test-group-name-4"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true 
-    }
-    $AppAdminGroup = New-MgGroup @AppGroupParams
-    Write-Verbose "Group created: $AppAdminGroupName"
-    Start-Sleep -Seconds $DelayShort
-}
-
-# Verify group is role-assignable
-Write-Verbose "[*] Verifying group configuration..."
-try {
-    $VerifyGroup = Get-MgGroup -GroupId $AppAdminGroup.Id -ErrorAction Stop
-    Write-Verbose "[OK] Group found: $($VerifyGroup.DisplayName) (ID: $($VerifyGroup.Id))"
-    Write-Verbose "Group IsAssignableToRole: $($VerifyGroup.IsAssignableToRole)"
-    
-    if (-not $VerifyGroup.IsAssignableToRole) {
-        Write-Host "[!] WARNING: Group is not assignable to roles - fixing..." -ForegroundColor Yellow
-        try {
-            Update-MgGroup -GroupId $AppAdminGroup.Id -IsAssignableToRole:$true -ErrorAction Stop
-            Write-Verbose "[OK] Group updated to be role-assignable"
-            Start-Sleep -Seconds $DelayLong
-        } catch {
-            Write-Host " [!] Failed to update group: $($_.Exception.Message)" -ForegroundColor Red
-        }
-    }
-} catch {
-    Write-Host "[[ERROR]] Group verification failed: $($_.Exception.Message)" -ForegroundColor Red
-}
+$AppAdminGroup = New-EntraGoatGroup -GroupName $AppAdminGroupName -Description "Team responsible for operating enterprise applications" -MailNickname "it-ops-app-managers"
 
 # Create ELIGIBLE Application Administrator role assignment
 Write-Verbose "[*] Creating eligible Application Administrator role assignment..."
@@ -336,32 +439,12 @@ if (-not $ExistingEligible) {
         }
         
         $EligibleRoleResult = New-MgRoleManagementDirectoryRoleEligibilityScheduleRequest -BodyParameter $EligibilityRequestParams -ErrorAction Stop
-        Write-Verbose "[OK] Eligible Application Administrator role created successfully"
+        Write-Verbose "[+] Eligible Application Administrator role created successfully"
         Write-Verbose "Request ID: $($EligibleRoleResult.Id)"
-        Start-Sleep -Seconds $DelayLong
+        Start-Sleep -Seconds $longReplicationDelay
         
     } catch {
-        Write-Host "[!] Eligible role assignment failed: $($_.Exception.Message)" -ForegroundColor Red
-        
-        # Fallback to active assignment
-        Write-Verbose "Attempting fallback: Creating ACTIVE role assignment..."
-        try {
-            $AppAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$AppAdminRoleId'" -ErrorAction SilentlyContinue
-            if (-not $AppAdminRole) {
-                Write-Verbose " Activating Application Administrator role template"
-                $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $AppAdminRoleId
-                $AppAdminRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
-                Start-Sleep -Seconds $DelayShort
-            }
-            
-            $RoleMemberRef = @{ "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($AppAdminGroup.Id)" }
-            New-MgDirectoryRoleMemberByRef -DirectoryRoleId $AppAdminRole.Id -BodyParameter $RoleMemberRef -ErrorAction Stop
-            Write-Verbose "[OK] Fallback: Active Application Administrator role assigned"
-            Start-Sleep -Seconds $DelayLong
-            
-        } catch {
-            Write-Host "[!] Both eligible and active role assignments failed: $($_.Exception.Message)" -ForegroundColor Red
-        }
+        Write-Host "[!] Eligible role assignment failed: $($_.Exception.Message)" 
     }
 } else {
     Write-Verbose "Eligible Application Administrator role already exists"
@@ -370,49 +453,9 @@ if (-not $ExistingEligible) {
 
 #region Target application registration and service principal
 Write-Verbose "[*] Creating target application and service principal..."
-$ExistingApp = Get-MgApplication -Filter "displayName eq '$TargetAppName'" -ErrorAction SilentlyContinue
-
-if ($ExistingApp) {
-    $TargetApp = $ExistingApp
-    Write-Verbose "Application exists: $TargetAppName"
-} else {
-    $AppParams = @{
-        DisplayName = $TargetAppName
-        SignInAudience = "AzureADMyOrg"
-        Description = "Target application for privilege escalation scenario"
-        Web = @{
-            RedirectUris = @("https://target-app-4.example.com/callback")
-        }
-    }
-    $TargetApp = New-MgApplication @AppParams
-    Write-Verbose "Application created: $TargetAppName"
-    Start-Sleep -Seconds $DelayShort
-}
-
-$TargetAppId = $TargetApp.AppId
-if ($TargetAppId -is [array]) { $TargetAppId = $TargetAppId[0] }
-$TargetAppId = $TargetAppId.ToString()
-
-# Create corresponding service principal
-Write-Verbose "[*] Creating service principal..."
-$ExistingSP = Get-MgServicePrincipal -Filter "appId eq '$TargetAppId'" -ErrorAction SilentlyContinue
-
-if ($ExistingSP) {
-    $TargetSP = $ExistingSP
-    Write-Verbose " Service principal exists"
-} else {
-    $SPParams = @{
-        AppId = $TargetAppId
-        DisplayName = $TargetAppName
-    }
-    $TargetSP = New-MgServicePrincipal @SPParams
-    Write-Verbose "Service principal created"
-    Start-Sleep -Seconds $DelayShort
-}
-
-# Configure for portal visibility
-$SPTags = @("WindowsAzureActiveDirectoryIntegratedApp")
-Update-MgServicePrincipal -ServicePrincipalId $TargetSP.Id -Tags $SPTags
+$TargetAppResult = New-EntraGoatApplication -DisplayName $TargetAppName -Description "Target application for privilege escalation scenario" -RedirectUris @("https://target-app-4.example.com/callback")
+$TargetSP = $TargetAppResult.ServicePrincipal
+$TargetAppId = $TargetAppResult.AppId
 
 # Grant Directory.Read.All permission
 Write-Verbose "[*] Granting Directory.Read.All permission..."
@@ -430,75 +473,17 @@ if (-not $HasDirectoryRead) {
     }
     New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $TargetSP.Id -BodyParameter $PermissionParams | Out-Null
     Write-Verbose "    ->  Directory.Read.All permission granted"
-    Start-Sleep -Seconds $DelayShort
+    Start-Sleep -Seconds $standardDelay
 }
 #endregion
 
-#region Privileged Authentication Administrator Group
-Write-Verbose "[*] Creating Privileged Authentication Administrator group..."
-$ExistingPrivGroup = Get-MgGroup -Filter "displayName eq '$PrivAuthGroupName'" -ErrorAction SilentlyContinue
+#region Global Administrator Group
+Write-Verbose "[*] Creating Global Administrator group..."
+$PrivAuthRoleId = "62e90394-69f5-4237-9190-012177145e10"
+$PrivAuthGroup = New-EntraGoatGroup -GroupName $PrivAuthGroupName -Description "Group with Global Administrator privileges" -MailNickname "global-infra-team-4" -RoleTemplateId $PrivAuthRoleId
 
-if ($ExistingPrivGroup) {
-    $PrivAuthGroup = $ExistingPrivGroup
-    Write-Verbose "    ->  Group exists: $PrivAuthGroupName"
-} else {
-    $PrivGroupParams = @{
-        DisplayName = $PrivAuthGroupName
-        Description = "Group with Privileged Authentication Administrator privileges"
-        MailEnabled = $false
-        MailNickname = "priv-test-group-name-4"
-        SecurityEnabled = $true
-        IsAssignableToRole = $true
-    }
-    $PrivAuthGroup = New-MgGroup @PrivGroupParams
-    Write-Verbose "    ->  Group created: $PrivAuthGroupName"
-    Start-Sleep -Seconds $DelayShort
-}
-
-# Assign Privileged Authentication Administrator role (active assignment)
-Write-Verbose "[*] Assigning Privileged Authentication Administrator role..."
-$PrivAuthRoleId = "7be44c8a-adaf-4e2a-84d6-ab2649e08a13"
-
-$PrivAuthRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$PrivAuthRoleId'" -ErrorAction SilentlyContinue
-if (-not $PrivAuthRole) {
-    Write-Verbose "    ->  Activating Privileged Authentication Administrator role template"
-    $RoleTemplate = Get-MgDirectoryRoleTemplate -DirectoryRoleTemplateId $PrivAuthRoleId
-    $PrivAuthRole = New-MgDirectoryRole -RoleTemplateId $RoleTemplate.Id
-    Start-Sleep -Seconds $DelayShort
-}
-
-$ExistingRoleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $PrivAuthRole.Id -All -ErrorAction SilentlyContinue
-$GroupHasRole = $false
-if ($ExistingRoleMembers) {
-    foreach ($member in $ExistingRoleMembers) {
-        if ($member.Id -eq $PrivAuthGroup.Id) {
-            $GroupHasRole = $true
-            break
-        }
-    }
-}
-
-if (-not $GroupHasRole) {
-    try {
-        $RoleRef = @{
-            "@odata.id" = "https://graph.microsoft.com/v1.0/groups/$($PrivAuthGroup.Id)"
-        }
-        New-MgDirectoryRoleMemberByRef -DirectoryRoleId $PrivAuthRole.Id -BodyParameter $RoleRef -ErrorAction Stop
-        Write-Verbose "    ->  Privileged Authentication Administrator role assigned"
-        Start-Sleep -Seconds $DelayLong
-    } catch {
-        if ($_.Exception.Message -like "*already exist*") {
-            Write-Verbose "Role already assigned"
-        } else {
-            Write-Verbose "Role assignment failed: $($_.Exception.Message)"
-        }
-    }
-} else {
-    Write-Verbose "Group already has Privileged Authentication Administrator role"
-}
-
-# Add service principal to privileged group
-Write-Verbose "[*] Adding service principal to privileged auth group..."
+# Add service principal to Global Administrator group
+Write-Verbose "[*] Adding service principal to Global Administrator group..."
 $GroupMembers = (Invoke-MgGraphRequest -Uri "/beta/groups/$($PrivAuthGroup.Id)/members" -Method GET).value
 $SPIsMember = $false
 
@@ -509,14 +494,14 @@ if ($GroupMembers) {
 if ($SPIsMember) {
     Write-Verbose "Service principal already member"
 } else {
-    $MemberRef = @{
+    $memberRef = @{
         '@odata.id' = "https://graph.microsoft.com/v1.0/servicePrincipals/$($TargetSP.Id)"
     }
     try {
-        New-MgGroupMemberByRef -GroupId $PrivAuthGroup.Id -BodyParameter $MemberRef -ErrorAction Stop
+        New-MgGroupMemberByRef -GroupId $PrivAuthGroup.Id -BodyParameter $memberRef -ErrorAction Stop
         Write-Verbose "Service principal added to group"
         Write-Verbose "Waiting for membership propagation..."
-        Start-Sleep -Seconds $DelayLong
+        Start-Sleep -Seconds $longReplicationDelay
     } catch {
         if ($_.Exception.Message -like "*already exist*") {
             Write-Verbose "Service principal already member"
@@ -611,11 +596,11 @@ if (-not $JenniferIsMember) {
     }
 }
 
-Start-Sleep -Seconds $DelayShort
+Start-Sleep -Seconds $standardDelay
 #endregion
 
-#region Create Eligible Group Ownership (THE VULNERABILITY)
-Write-Verbose "[!] CREATING VULNERABILITY: Creating eligible group ownership..."
+#region Create Eligible Group Ownership (THE MISCONFIGURATION)
+Write-Verbose "[!] CREATING MISCONFIGURATION: Creating eligible group ownership..."
 
 # Make the low-privileged user eligible owner of the Application Administrator group
 Write-Verbose "Creating eligible ownership for '$LowPrivUPN' on '$AppAdminGroupName'..."
@@ -639,67 +624,18 @@ try {
     $ownershipResponse = Invoke-MgGraphRequest -Method POST `
         -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/eligibilityScheduleRequests" `
         -Body ($eligibleOwnerParams | ConvertTo-Json -Depth 4) -ContentType "application/json"
-    Write-Verbose "[OK] Eligible ownership granted (vulnerability created)"
+    Write-Verbose "[+] Eligible ownership granted (vulnerability created)" 
     Write-Verbose "Assignment ID: $($ownershipResponse.id)"
     Write-Verbose "User '$LowPrivUPN' now has ELIGIBLE ownership of '$AppAdminGroupName'"
-    $EligibleOwnershipCreated = $true
-    Start-Sleep -Seconds $DelayLong
+    Start-Sleep -Seconds $longReplicationDelay
 } catch {
-    Write-Verbose "[ERROR] Failed to create eligible ownership: $($_.Exception.Message)"
-    Write-Verbose "Attempting fallback: Direct ownership assignment..."
-    
-    # Fallback to direct ownership if PIM fails
-    try {
-        $ExistingOwners = Get-MgGroupOwner -GroupId $AppAdminGroup.Id
-        $IsDirectOwner = $false
-        if ($ExistingOwners) {
-            foreach ($owner in $ExistingOwners) {
-                if ($owner.Id -eq $LowPrivUser.Id) {
-                    $IsDirectOwner = $true
-                    break
-                }
-            }
-        }
-
-        if (-not $IsDirectOwner) {
-            $OwnerRef = @{
-                "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($LowPrivUser.Id)"
-            }
-            New-MgGroupOwnerByRef -GroupId $AppAdminGroup.Id -BodyParameter $OwnerRef
-            Write-Verbose "[OK] Direct group ownership assigned (fallback vulnerability created)"
-            $EligibleOwnershipCreated = $false
-            $DirectOwnershipCreated = $true
-            Start-Sleep -Seconds $DelayShort
-        } else {
-            Write-Verbose "Direct group ownership already exists"
-            $EligibleOwnershipCreated = $false
-            $DirectOwnershipCreated = $true
-        }
-    } catch {
-        Write-Verbose "Both eligible and direct ownership failed: $($_.Exception.Message)"
-        $EligibleOwnershipCreated = $false
-        $DirectOwnershipCreated = $false
-    }
+    Write-Verbose "[-] Failed to create eligible ownership. Please review the final verification checks to determine if ownership is already assigned. $($_.Exception.Message)" 
 }
 
-if (-not $EligibleOwnershipCreated -and -not $DirectOwnershipCreated) {
-    $EligibleOwnershipCreated = $false
-    $DirectOwnershipCreated = $false
-}
 #endregion
 
 #region Final Verification
 Write-Verbose "[*] Performing final verification checks..."
-
-# Verify ownership (either eligible or direct)
-$Owners = Get-MgGroupOwner -GroupId $AppAdminGroup.Id
-$DirectOwnershipVerified = $false
-foreach ($owner in $Owners) {
-    if ($owner.Id -eq $LowPrivUser.Id) {
-        $DirectOwnershipVerified = $true
-        break
-    }
-}
 
 # Check for PIM eligible group ownership
 $PIMEligibleOwnership = $false
@@ -709,60 +645,30 @@ try {
     
     if ($EligibleResponse.value -and $EligibleResponse.value.Count -gt 0) {
         $PIMEligibleOwnership = $true
-        Write-Verbose "[OK] PIM eligible group ownership found"
+        Write-Verbose "[+] PIM eligible group ownership found" 
     }
 } catch {
-    Write-Verbose "PIM ownership check failed: $($_.Exception.Message)"
+    Write-Verbose "[-] PIM ownership check failed: $($_.Exception.Message)"
 }
 
-# Overall ownership verification
-$OwnershipVerified = $PIMEligibleOwnership -or $DirectOwnershipVerified
-
 if ($PIMEligibleOwnership) {
-    Write-Verbose "[OK] PIM eligible group ownership verified"
-} elseif ($DirectOwnershipVerified) {
-    Write-Verbose "[OK] Direct group ownership verified (fallback)"
+    Write-Verbose "[+] PIM eligible group ownership verified"
 } else {
-    Write-Verbose "[[ERROR]] No group ownership found"
+    Write-Verbose "[-] No group ownership found"
 }
 
 # Verify eligible role assignment
 $EligibleRole = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -Filter "principalId eq '$($AppAdminGroup.Id)' and roleDefinitionId eq '$AppAdminRoleId'" -ErrorAction SilentlyContinue
 $EligibleRoleVerified = $EligibleRole -ne $null
 
-# Also check for active role assignment if eligible failed
-$ActiveRoleVerified = $false
-if (-not $EligibleRoleVerified) {
-    try {
-        $AppAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$AppAdminRoleId'" -ErrorAction SilentlyContinue
-        if ($AppAdminRole) {
-            $ExistingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $AppAdminRole.Id -All -ErrorAction SilentlyContinue
-            if ($ExistingMembers) {
-                foreach ($member in $ExistingMembers) {
-                    if ($member.Id -eq $AppAdminGroup.Id) {
-                        $ActiveRoleVerified = $true
-                        break
-                    }
-                }
-            }
-        }
-    } catch {
-        Write-Verbose "Active role verification failed: $($_.Exception.Message)"
-    }
-}
-
-$RoleAssignmentVerified = $EligibleRoleVerified -or $ActiveRoleVerified
-
 if ($EligibleRoleVerified) {
-    Write-Verbose "[OK] Eligible Application Administrator role verified"
-} elseif ($ActiveRoleVerified) {
-    Write-Verbose "[OK] Active Application Administrator role verified (fallback)"
+    Write-Verbose "[+] Eligible Application Administrator role verified"
 } else {
-    Write-Verbose "[[ERROR]] Application Administrator role verification failed"
+    Write-Verbose "[-] Application Administrator role verification failed"
 }
 
 # Verify service principal membership
-$PrivGroupMembers = Get-MgGroupMember -GroupId $PrivAuthGroup.Id -All -ErrorAction SilentlyContinue
+$PrivGroupMembers = (Invoke-MgGraphRequest -Uri "/beta/groups/$($PrivAuthGroup.Id)/members" -Method GET -ErrorAction SilentlyContinue).value
 $SPMembershipVerified = $false
 if ($PrivGroupMembers) {
     foreach ($member in $PrivGroupMembers) {
@@ -774,153 +680,98 @@ if ($PrivGroupMembers) {
 }
 
 if ($SPMembershipVerified) {
-    Write-Verbose "[OK] Service principal membership verified"
+    Write-Verbose "[+] Service principal membership verified" 
 } else {
-    Write-Verbose "[[ERROR]] Service principal membership verification failed"
+    Write-Verbose '[-] Service principal membership verification failed' 
 }
 
-$OverallSuccess = $OwnershipVerified -and $RoleAssignmentVerified
+$OverallSuccess = $PIMEligibleOwnership -and $EligibleRoleVerified
 #endregion
 
 #region Output Summary
 if ($VerbosePreference -eq 'Continue') {
+    # Verbose output with all details
     Write-Host ""
-    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
-    Write-Host "|                      SCENARIO 4 SETUP                        |" -ForegroundColor Green
-    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Green
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host "|             SCENARIO 4 SETUP COMPLETED (VERBOSE)             |" -ForegroundColor Cyan
+    Write-Host "|--------------------------------------------------------------|" -ForegroundColor Cyan
+    Write-Host ""
 
-    Write-Host "`nPIM EXPLOITATION CHAIN:" -ForegroundColor Yellow
-        Write-Host "Low-privileged user has ELIGIBLE ownership of group" -ForegroundColor Magenta
-        Write-Host "Must activate ownership through PIM" -ForegroundColor Magenta
-    } else {
-        Write-Host "Low-privileged user owns Application Administrator group" -ForegroundColor White
-    }
-    Write-Host "Group has ELIGIBLE Application Administrator role" -ForegroundColor Magenta
-    Write-Host "User can add themselves to group" -ForegroundColor White
-    Write-Host "User can activate Application Administrator role via PIM" -ForegroundColor Magenta
-    Write-Host "Service principal has Privileged Authentication Admin privileges" -ForegroundColor White
-    Write-Host "Can compromise service principal and reset Global Admin password" -ForegroundColor White
+    Write-Host "`nVULNERABILITY DETAILS:" -ForegroundColor Yellow
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  - Low-privileged user has eligible ownership of group" -ForegroundColor White
+    Write-Host "  - Group has eligible Application Administrator role" -ForegroundColor White
+    Write-Host "  - User can activate role through PIM" -ForegroundColor White
+    Write-Host "  - Service principal has Global Administrator privileges via group membership" -ForegroundColor White
 
-    Write-Host "`nCONFIGURATION SUMMARY:" -ForegroundColor Yellow
+    Write-Host "`nATTACKER CREDENTIALS:" -ForegroundColor Red
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Username: " -ForegroundColor White -NoNewline
+    Write-Host "$LowPrivUPN" -ForegroundColor Cyan
+    Write-Host "  Password: " -ForegroundColor White -NoNewline
+    Write-Host "$LowPrivPassword" -ForegroundColor Cyan
+
+    Write-Host "`nTARGET:" -ForegroundColor Magenta
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Username: " -ForegroundColor White -NoNewline
+    Write-Host "$AdminUPN" -ForegroundColor Cyan
+    Write-Host "  Flag Location: " -ForegroundColor White -NoNewline
+    Write-Host "extensionAttribute1" -ForegroundColor Cyan
+
+    Write-Host "`nGROUPS:" -ForegroundColor Blue
+    Write-Host "----------------------------" -ForegroundColor DarkGray
     Write-Host "  App Admin Group: " -ForegroundColor White -NoNewline
     Write-Host "$AppAdminGroupName" -ForegroundColor Cyan
     Write-Host "  Group ID: " -ForegroundColor White -NoNewline
-    Write-Host "$($AppAdminGroup.Id)" -ForegroundColor DarkCyan
-    Write-Host ""
+    Write-Host "$($AppAdminGroup.Id)" -ForegroundColor Cyan
     Write-Host "  Priv Auth Group: " -ForegroundColor White -NoNewline
     Write-Host "$PrivAuthGroupName" -ForegroundColor Cyan
     Write-Host "  Group ID: " -ForegroundColor White -NoNewline
-    Write-Host "$($PrivAuthGroup.Id)" -ForegroundColor DarkCyan
-    Write-Host ""
-    Write-Host "  Target SP: " -ForegroundColor White -NoNewline
+    Write-Host "$($PrivAuthGroup.Id)" -ForegroundColor Cyan
+
+    Write-Host "`nSERVICE PRINCIPAL:" -ForegroundColor Blue
+    Write-Host "----------------------------" -ForegroundColor DarkGray
+    Write-Host "  Name: " -ForegroundColor White -NoNewline
     Write-Host "$TargetAppName" -ForegroundColor Cyan
     Write-Host "  SP ID: " -ForegroundColor White -NoNewline
-    Write-Host "$($TargetSP.Id)" -ForegroundColor DarkCyan
+    Write-Host "$($TargetSP.Id)" -ForegroundColor Cyan
 
-    Write-Host "`nPIM STATUS:" -ForegroundColor Yellow
-    if ($PIMEligibleOwnership) {
-        Write-Host "Eligible Ownership: " -ForegroundColor White -NoNewline
-        Write-Host "CONFIGURED [OK]" -ForegroundColor Green
-    } elseif ($DirectOwnershipVerified) {
-        Write-Host " Ownership Type: " -ForegroundColor White -NoNewline
-        Write-Host "DIRECT (Fallback)" -ForegroundColor Yellow
-    } else {
-        Write-Host "Ownership Status: " -ForegroundColor White -NoNewline
-        Write-Host "NOT CONFIGURED [ERROR]" -ForegroundColor Red
-    }
-
-    Write-Host "`nFLAG LOCATION:" -ForegroundColor Green
-    Write-Host "  Flag: " -ForegroundColor Green -NoNewline
-    Write-Host "$Flag" -ForegroundColor Cyan
-    Write-Host "  Target: " -ForegroundColor White -NoNewline
-    Write-Host "$AdminUPN" -ForegroundColor Cyan -NoNewline
-    Write-Host " ->  extensionAttribute1" -ForegroundColor DarkCyan
     Write-Host ""
-   
-   
+    Write-Host "FLAG: " -ForegroundColor Green -NoNewline
+    Write-Host "$Flag" -ForegroundColor Cyan
+
+    Write-Host "`n=====================================================" -ForegroundColor DarkGray
+    Write-Host ""
+} else {
     # Minimal output for CTF players
     Write-Host ""
     if ($OverallSuccess) {
         Write-Host "[+] " -ForegroundColor Green -NoNewline
-        Write-Host "New PIM scenario setup completed successfully" -ForegroundColor White
+        Write-Host "Scenario 4 setup completed successfully" -ForegroundColor White
         Write-Host ""
         Write-Host "Objective: Sign in as the admin user and retrieve the flag." -ForegroundColor Gray
         Write-Host ""
         Write-Host "`nYOUR CREDENTIALS:" -ForegroundColor Red
-        Write-Host "----------------------------------------------" -ForegroundColor DarkGray
+        Write-Host "----------------------------" -ForegroundColor DarkGray
         Write-Host "  Username: " -ForegroundColor White -NoNewline
         Write-Host "$LowPrivUPN" -ForegroundColor Cyan
         Write-Host "  Password: " -ForegroundColor White -NoNewline
         Write-Host "$LowPrivPassword" -ForegroundColor Cyan
 
-        Write-Host "`nTARGET INFORMATION:" -ForegroundColor Magenta
-        Write-Host "----------------------------------------------" -ForegroundColor DarkGray
+        Write-Host "`nTARGET:" -ForegroundColor Magenta
+        Write-Host "----------------------------" -ForegroundColor DarkGray
         Write-Host "  Username: " -ForegroundColor White -NoNewline
         Write-Host "$AdminUPN" -ForegroundColor Cyan
+        
         Write-Host "  Flag Location: " -ForegroundColor White -NoNewline
         Write-Host "extensionAttribute1" -ForegroundColor Cyan
-        
-        Write-Host "`nPIM CONFIGURATION:" -ForegroundColor Yellow
-        Write-Host "----------------------------------------------" -ForegroundColor DarkGray
-        
-        if ($PIMEligibleOwnership) {
-            Write-Host "  Eligible Owner: " -ForegroundColor Magenta -NoNewline
-            Write-Host "$LowPrivUPN" -ForegroundColor Cyan
-        } elseif ($DirectOwnershipVerified) {
-            Write-Host "  Direct Owner: " -ForegroundColor White -NoNewline
-            Write-Host "$LowPrivUPN" -ForegroundColor Cyan -NoNewline
-            Write-Host " (fallback)" -ForegroundColor Yellow
-        }
-        
-        if ($EligibleRoleVerified) {
-            Write-Host "  Eligible Role: " -ForegroundColor Magenta -NoNewline
-            Write-Host "Application Administrator" -ForegroundColor Cyan
-        } elseif ($ActiveRoleVerified) {
-            Write-Host "  Active Role: " -ForegroundColor White -NoNewline
-            Write-Host "Application Administrator" -ForegroundColor Cyan -NoNewline
-            Write-Host " (fallback)" -ForegroundColor Yellow
-        }
         Write-Host ""
-        if ($PIMEligibleOwnership -and $EligibleRoleVerified) {
-            Write-Host "Perfect! Full PIM setup successful. You'll need to:" -ForegroundColor DarkGray
-            Write-Host "   1. Activate your eligible ownership via PIM" -ForegroundColor DarkGray
-            Write-Host "   2. Add yourself to the group" -ForegroundColor DarkGray  
-            Write-Host "   3. Activate the group's Application Administrator role via PIM" -ForegroundColor DarkGray
-            Write-Host "   4. Find service principals to escalate further" -ForegroundColor DarkGray
-        } elseif ($PIMEligibleOwnership) {
-            Write-Host "PIM ownership configured. You have eligible ownership:" -ForegroundColor DarkGray
-            Write-Host "   1. Activate your eligible ownership via PIM" -ForegroundColor DarkGray
-            Write-Host "   2. Add yourself to the group" -ForegroundColor DarkGray  
-            Write-Host "   3. Use the group's Application Administrator privileges" -ForegroundColor DarkGray
-            Write-Host "   4. Find service principals to escalate further" -ForegroundColor DarkGray
-        } elseif ($DirectOwnershipVerified -and $EligibleRoleVerified) {
-            Write-Host "Mixed setup: Direct ownership + Eligible role. You can:" -ForegroundColor DarkGray
-            Write-Host "   1. Add yourself to the group (you're the owner)" -ForegroundColor DarkGray
-            Write-Host "   2. Activate the Application Administrator role via PIM" -ForegroundColor DarkGray
-            Write-Host "   3. Find service principals to escalate further" -ForegroundColor DarkGray
-        } elseif ($DirectOwnershipVerified) {
-            Write-Host "Direct ownership setup: You own the group directly." -ForegroundColor DarkGray
-            Write-Host "   Add yourself to the group and use its privileges!" -ForegroundColor DarkGray
-            Write-Host "   The path to Global Admin involves service principals..." -ForegroundColor DarkGray
-        } else {
-            Write-Host " Warning: Setup may be incomplete. Check the verbose output." -ForegroundColor Yellow
-        }
+
+        Write-Host "Hint: Authority can be hidden in plain sight, masked until someone chooses to activate it." -ForegroundColor DarkGray
     } else {
         Write-Host "[-] " -ForegroundColor Red -NoNewline
-        Write-Host "New PIM scenario setup failed. Run with -Verbose for detailed debugging." -ForegroundColor White
+        Write-Host "Scenario 4 setup failed - give it another shot or run with -Verbose flag to reveal more for debugging (spoiler alert)." -ForegroundColor White
     }
     Write-Host ""
-
-
-# Cleanup - disconnect from Graph
-try {
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
-} catch {
-    # Ignore cleanup errors
 }
-
-Write-Host "Setup complete. Time to exploit some PIM configurations!" -ForegroundColor Green
-Write-Host ""
 #endregion
-
-# End of script
