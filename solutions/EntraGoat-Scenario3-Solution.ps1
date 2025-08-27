@@ -194,7 +194,7 @@ Get-MgUserOwnedObject -UserId $currentUser.Id -All
 # Get-MgUserOwnedObject efficiently enumerates all directory objects owned by a user, eliminating the need to 
 # query groups, apps & SPs, and devices object types individually like we intentionally just did.
 # a bit more nicely (thanks Sonnet!)
-Get-MgUserOwnedObject -UserId $currentUser.Id -All | select Id,@{n='DisplayName';e={$_.AdditionalProperties.displayName ?? $_.DisplayName}},@{n='Type';e={(($_.OdataType ?? $_.AdditionalProperties.'@odata.type' ?? $_.GetType().Name) -replace '^#?microsoft\.graph\.','')}}
+Get-MgUserOwnedObject -UserId $currentUser.Id -All | Select-Object Id,@{n='DisplayName';e={$_.AdditionalProperties.displayName ?? $_.DisplayName}},@{n='Type';e={(($_.OdataType ?? $_.AdditionalProperties.'@odata.type' ?? $_.GetType().Name) -replace '^#?microsoft\.graph\.','')}}
 
 
 # Get-GroupsOwnedBy function would made 100-1000x more API requests compared to Get-MgUserOwnedObject 
