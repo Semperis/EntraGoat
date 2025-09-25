@@ -75,6 +75,9 @@ EntraGoat scenarios run entirely within your existing Entra ID tenant and do not
 
 - **Black Hat USA 2025** - Arsenal
 - **DEF CON 33** - Demo Labs
+- **BSides Frankfurt 2025** - Main hall 
+- **SEC-T 0x11** - Main hall
+- **Black Hat SecTor 2025** - Arsenal 
 
 ## 📚 Solutions
 
