@@ -13,7 +13,7 @@ Attack flow:
 1. The attacker starts with access to a leaked certificate that (reportedly) was exposed through CI/CD pipeline artifacts.
 A certificate "falls off a truck" during a CI/CD pipeline mishap - basically, as a result of a misconfigured CI/CD pipeline or careless developer logging sensitive information.
 
-2. The certificate is valid for a service principal named "Corporate Finance Analytics" that has the AppRoleAssignment.ReadWrite.All application permission.
+2. The certificate is valid for a service principal named "Corporate Finance Analytics" that has the AppRoleAssignment.ReadWrite.All application permissions.
 
 3. By authenticating in an app-only context, the attacker (ab)uses this permission to assign another permission, RoleManagement.ReadWrite.Directory, to the same service principal.
 This permission is like giving someone the keys to the permission store AND the role assignment office.
@@ -28,14 +28,14 @@ No phishing, no persistence tricks - just raw role power obtained through one si
 
 - - - 
 
---> So... why this works?
+--> So... why does this work?
 Microsoft Graph API permissions are incredibly powerful, and some combinations create dangerous privilege escalation paths.
 'AppRoleAssignment.ReadWrite.All' essentially allows a service principal to grant itself any permission it wants. The scenario demonstrates how  certificate sprawl and overprivileged Graph scopes create serious security risks.
 
 This scenario highlights how:
 - Certificate leakage can be as dangerous as password leakage
 - App permissions can create privilege escalation paths
-- Service principal permissions need careful review and principle of least privilege as even a single permission can be considered as over-privileged!
+- Service principal permissions need careful review and the principle of least privilege, as even a single permission can be considered as over-privileged!
 - The distinction between permission enforcement via token claims vs. real-time directory evaluation
 
 ________________________________________________________________________________________________________________________________________________
@@ -107,7 +107,7 @@ $SP = Get-MgServicePrincipal -Filter "displayName eq 'Corporate Finance Analytic
 $appId = $SP.AppId
 $spId = $SP.Id
 
-# We can also use the thumbprint hash to query all apps and check their keyCredentials attribute for matching thumbprint in a more automated way
+# We can also use the thumbprint hash to query all apps and check their keyCredentials attribute for a matching thumbprint in a more automated way
 $matchingApp = Find-AppRegistrationByThumbprint -Thumbprint $cert.Thumbprint
 $appId = $matchingApp.AppId
 
@@ -125,7 +125,7 @@ Get-MgContext
 
 # Seeing the "AppRoleAssignment.ReadWrite.All" permission is crucial here, as it allows us to modify app role assignments for any service principal - including ourselves!
 
-# To do so, we first need to get MS Graph service principal to find and its ID (it also contains all assignable OAuth roles)
+# To do so, we first need to get the MS Graph service principal to find its ID (it also contains all assignable OAuth roles)
 $graphSP = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
 
 # Step 3: Assigning dangerous permissions - Grant ourselves RoleManagement.ReadWrite.Directory permission
@@ -190,6 +190,6 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
 
 Disconnect-MgGraph
 
-# Don't forget to run the cleanup script to restore the tenant to it's original state!
+# Don't forget to run the cleanup script to restore the tenant to its original state!
 
 # Official blog post: https://www.semperis.com/blog/exploiting-app-only-graph-permissions-in-entra-id/
