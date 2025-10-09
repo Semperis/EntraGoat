@@ -7,7 +7,7 @@
 EntraGoat uses PowerShell scripts and Microsoft Graph APIs to deploy vulnerable configurations in your Entra ID tenant. This gives users complete control over the learning environment while maintaining isolation from production systems.
 
 
-## 🚀 Getting Started
+## 🐐 Getting Started 🐐
 
 ### Prerequisites
 - A Microsoft Entra ID tenant (Use a test/trial tenant)
@@ -19,7 +19,7 @@ EntraGoat uses PowerShell scripts and Microsoft Graph APIs to deploy vulnerable 
 
 EntraGoat provides an interactive web interface for challenge management and PowerShell scripts for infrastructure deployment.
 
-#### Method 1: Quick Setup (Recommended)
+#### Method 1: Quick Setup 
 
 1. **Clone the repository**
    ```bash
@@ -43,7 +43,7 @@ EntraGoat provides an interactive web interface for challenge management and Pow
 
 5. **Run the Setup Script for each given scenario**
 
-#### Method 2: Manual PowerShell Setup
+#### Method 2: Manual PowerShell Setup (Recommended)
 
 For individual scenarios, navigate to the specific challenge directory:
 
@@ -55,10 +55,10 @@ cd scenarios
 ## 🎯 Challenge Structure
 
 Each scenario includes:
-- **📋 Setup Script** - Deploys vulnerable configuration
-- **🧹 Cleanup Script** - Removes all created objects
-- **📖 Solution Walkthrough** - Step-by-step attack demonstration
-- **🎌 Capture the Flag** - Hidden flags to discover
+- **Setup Script** - Deploys vulnerable configuration
+- **Cleanup Script** - Removes all created objects
+- **Solution Walkthrough** - Step-by-step attack demonstration
+- **Capture the Flag** - Hidden flags to discover
 
 ## 💰 Pricing
 
@@ -71,7 +71,7 @@ EntraGoat scenarios run entirely within your existing Entra ID tenant and do not
 - **Jonathan Elkabas** - Security Researcher @Semperis
 - **Tomer Nahum** - Security Research Team Lead @Semperis
 
-## 🎯 Presented at
+## Presented at
 
 - **Black Hat USA 2025** - Arsenal
 - **DEF CON 33** - Demo Labs
@@ -79,7 +79,7 @@ EntraGoat scenarios run entirely within your existing Entra ID tenant and do not
 - **SEC-T 0x11** - Main hall
 - **Black Hat SecTor 2025** - Arsenal 
 
-## 📚 Solutions
+## Solutions
 
 ⚠️ **Spoiler Alert!** Solution files contain complete attack walkthroughs.
 
@@ -87,14 +87,14 @@ Solution guides are available in the `solutions/` directory for each scenario:
 - Detailed step-by-step attack procedures
 - PowerShell automation scripts
 
-## 📝  Resources
+## Resources
 - [What Is EntraGoat?](https://www.semperis.com/blog/what-is-entragoat-entra-id-simulation-environment/)
 - [Getting started with EntraGoat](https://www.semperis.com/blog/getting-started-with-entragoat-entra-id-simulation-lab/)
 - [Scenario 1 Solution: Service Principal Ownership Abuse in Entra ID](https://www.semperis.com/blog/service-principal-ownership-abuse-in-entra-id/)
 - [Scenario 2 Solution: Exploiting App-Only Graph Permissions in Entra ID](https://www.semperis.com/blog/exploiting-app-only-graph-permissions-in-entra-id/)
 - [Scenario 6 Solution: Exploiting Certificate-Based Authentication to Impersonate Global Admin in Entra ID](https://www.semperis.com/blog/exploiting-certificate-based-authentication-in-entra-id/)
 
-## 🖼️ Screenshots
+## Screenshots
 
 ### Main Dashboard
 ![Main Dashboard](./screenshots/dashboard.png)
@@ -132,4 +132,4 @@ This project is licensed under the terms of the MIT license, and is provided for
 
 ---
 
-**Happy Hunting!** - The EntraGoat Team
+**Happy Hacking!** - The EntraGoat Team
