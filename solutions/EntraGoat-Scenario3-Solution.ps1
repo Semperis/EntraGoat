@@ -15,10 +15,10 @@ Through a misconfiguration, this user owns multiple security groups - some with 
 2. Since group owners can manage group membership, the attacker can add themselves to any of these groups.
 No approval needed - group ownership means full control over membership. This gives them access to multiple privileged roles from the groups that have roles assigned.
 
-3. With Application Administrator role (from IT Application Managers group), the attacker can manage ALL application registrations and service principals in the tenant.
+3. With the Application Administrator role (from the IT Application Managers group), the attacker can manage ALL application registrations and service principals in the tenant.
 This includes adding credentials to any service principal - a powerful capability often overlooked.
 
-4. The attacker discovers a service principal that's a member of another group with Privileged Authentication Administrator (PAA) role.
+4. The attacker discovers a service principal that's a member of another group with the Privileged Authentication Administrator (PAA) role.
 This creates a privilege escalation chain: Group Owner -> App Admin -> SP -> PAA.
 
 5. The attacker adds credentials to this SP and authenticates as it.
@@ -31,7 +31,7 @@ Complete tenant compromise achieved through a chain of legitimate but misconfigu
 
 - - - 
 
---> So... why this works?
+--> So... why does this work?
 This attack exploits several common misconfigurations and oversight issues:
 
 1. Group Ownership is Powerful: Many organizations don't realize that group owners have full control over membership.
@@ -60,7 +60,7 @@ ________________________________________________________________________________
 
 .NOTES
 Requires: Get-MSGraphTokenWithUsernamePassword function from BARK (https://github.com/BloodHoundAD/BARK)
-you must have the function/BARK toolkit loaded in PS memory to use this function but other tools such GraphRunner, ROADtools, and AADInternals or simply Connect-MgGraph can be used as well.
+you must have the function/BARK toolkit loaded in PS memory to use this function, but other tools such as GraphRunner, ROADtools, and AADInternals or simply Connect-MgGraph, can be used as well.
 #>
 
 # quick wrapper to list all members of a group (handles SPs too - uses /beta)
@@ -184,7 +184,7 @@ foreach ($group in $roleGroups) {
 # IT Application Managers group has the Application Administrator role!! 
 
 
-# Alternatively we can use the flashy Get-GroupsOwnedBy function to automate the whole process 
+# Alternatively, we can use the flashy Get-GroupsOwnedBy function to automate the whole process 
 # of finding role assignable groups owned by the current user
 $ownedGroups = Get-GroupsOwnedBy -UserId $currentUser.Id 
 
@@ -192,28 +192,28 @@ $ownedGroups = Get-GroupsOwnedBy -UserId $currentUser.Id
 Get-MgUserOwnedObject -UserId $currentUser.Id -All
 
 # Get-MgUserOwnedObject efficiently enumerates all directory objects owned by a user, eliminating the need to 
-# query groups, apps & SPs, and devices object types individually like we intentionally just did.
+# query groups, apps & SPs, and devices object types individually, like we intentionally just did.
 # a bit more nicely (thanks Sonnet!)
 Get-MgUserOwnedObject -UserId $currentUser.Id -All | Select-Object Id,@{n='DisplayName';e={$_.AdditionalProperties.displayName ?? $_.DisplayName}},@{n='Type';e={(($_.OdataType ?? $_.AdditionalProperties.'@odata.type' ?? $_.GetType().Name) -replace '^#?microsoft\.graph\.','')}}
 
 
-# Get-GroupsOwnedBy function would made 100-1000x more API requests compared to Get-MgUserOwnedObject 
+# Get-GroupsOwnedBy function would make 100-1000x more API requests compared to Get-MgUserOwnedObject 
 # When selecting enumeration tools, always prioritize efficiency - minimum queries equals minimum logs and detection surface. 
-# There are many awesome (and some less-awesome) open source tools for enumerating Entra ID - its better to read the source code whenever possible to understand what's happening under the hood
+# There are many awesome (and some less-awesome) open source tools for enumerating Entra ID - it's better to read the source code whenever possible to understand what's happening under the hood
 
 
 
 # Step 4: Building the attack chain
 
 <#
-    Since we now have the ability to add ourselves to an Application Administrator group and inrent its the role,
+    Since we now have the ability to add ourselves to an Application Administrator group and inherit its role,
     we can add creds to any service principal in the tenant. Time to hunt for high-value SPs.
 
     For this walkthrough, we'll focus on SPs with roles that can reset a GA's password:
         Privileged Role Administrator (PRA), 
         Privileged Authentication Administrator (PAA) and 
         Global Administrator (GA)
-    But, when searching the tenant for privileged SPs, attackers should enumerate for SPs with interesting app permissions as well as those can be very powerful as seen in Scenario 2. 
+    But, when searching the tenant for privileged SPs, attackers should enumerate for SPs with interesting app permissions as well as those that can be very powerful, as seen in Scenario 2. 
 #>
 
 # lets list all SPs in the tenant that have PRA, PAA or GA roles assigned
@@ -282,7 +282,7 @@ Note:
 
 # Step 5: Executing the attack path 
 
-# we own IT Application Managers group that has the Application Administrator role
+# we own the IT Application Managers group that has the Application Administrator role
 $ITgroup = Get-MgGroup -Filter "displayName eq 'IT Application Managers'" 
 
 # since we own the group, we can add ourselves to it
@@ -358,7 +358,7 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
 
 Disconnect-MgGraph
 
-# Don't forget to run the cleanup script to restore the tenant to it's original state!
-# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the its source code.
+# Don't forget to run the cleanup script to restore the tenant to its original state!
+# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing its source code.
 
 # Official blog post: https://www.semperis.com/blog/
