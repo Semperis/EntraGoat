@@ -15,7 +15,7 @@ EntraGoat uses PowerShell scripts and Microsoft Graph APIs to deploy vulnerable 
 - Microsoft Graph PowerShell SDK
 - Node.js, npm
 
-### Installation
+### ⚙️ Installation
 
 EntraGoat provides an interactive web interface for challenge management and PowerShell scripts for infrastructure deployment.
 
