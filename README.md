@@ -59,6 +59,7 @@ cd scenarios
 | 4 | I (Eligibly) Own That | Intermediate |
 | 5 | Department of Escalations - AU Ready for This? | Advanced |
 | 6 | CBA (Certificate Bypass Authority) - Root Access Granted | Advanced |
+| 7 | Legacy Loophole — When MFA Forgot the Side Door | Beginner |
 
 Each scenario includes a setup script, cleanup script, solution walkthrough, and a hidden flag.
 

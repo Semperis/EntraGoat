@@ -12,6 +12,7 @@ EntraGoat ships with 6 privilege escalation scenarios of increasing difficulty. 
 | 4 | The Eligible Menace — PIM Path to Power | Intermediate | Privileged Identity Management abuse |
 | 5 | AU to Admin — The Restricted Path | Advanced | Administrative Unit boundary escape |
 | 6 | Certificate of Insanity — Trusting the Wrong Authority | Advanced | Certificate-based authentication impersonation |
+| 7 | Legacy Loophole — When MFA Forgot the Side Door | Beginner | Conditional Access bypass via legacy authentication |
 
 ## How to play
 

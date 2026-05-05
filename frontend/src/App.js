@@ -130,6 +130,25 @@ function App() {
         'Try enabling CBA with one SP, then use another to upload a trusted root CA and forge your way in. No password? No problem.'
       ],
       completed: false
+    },
+    {
+      id: 7,
+      title: 'Legacy Loophole - When MFA Forgot the Side Door',
+      description: 'Raj Patel runs the messaging stack and remembers every helpdesk shortcut the team ever cut. The tenant rolled out a "Require MFA for All Users" Conditional Access policy last quarter, but the messaging admin account still answers IMAP and SMTP AUTH for an old line-of-business mailbox. Find the gap in the policy, ride a legacy-auth path past MFA, and lift the flag from the admin\'s profile.',
+      difficulty: 'Beginner',
+      flag: 'EntraGoat{L3g@cy_4uth_C0nd1t10n@l_Byp@ss_Pwn3d!}',
+      startingCredentials: {
+        username: 'raj.patel@yourtenant.onmicrosoft.com',
+        password: 'GoatAccess!123'
+      },
+      hints: [
+        'Conditional Access scopes "client app types" as an allow-list. Look at what is actually scoped.',
+        'Modern auth and legacy auth are NOT the same channel for CA evaluation.',
+        'ROPC, IMAP, POP, SMTP AUTH and ActiveSync are all "legacy" - any of them will do.',
+        'Helpdesk reset passwords have a habit of sticking around.',
+        'Microsoft publishes a "Block legacy authentication" CA template for a reason.'
+      ],
+      completed: false
     }
   ];
   };
